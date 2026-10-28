@@ -1,0 +1,32 @@
+# Client reference material (private): never commit
+references/
+docs/
+
+# Dependencies and build output
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Vercel local link
+.vercel/
+
+# Environment files (secrets); keep only the sanitized example
+.env
+.env.*
+!.env.example
+*.local
+
+# Logs and temporary files
+*.log
+npm-debug.log*
+logs/
+tmp/
+.tmp/
+.DS_Store
+*.swp
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Binary duplicate of an installed skill
+.claude/skills/deploy-to-vercel/Archive.zip

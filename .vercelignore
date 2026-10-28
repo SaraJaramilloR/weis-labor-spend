@@ -1,0 +1,13 @@
+# Never upload client reference material or local/private files to Vercel
+references/
+docs/
+node_modules/
+dist/
+.vercel/
+.env
+.env.*
+*.local
+*.log
+.DS_Store
+.claude/
+scripts/
