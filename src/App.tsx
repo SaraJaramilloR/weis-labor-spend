@@ -4,6 +4,7 @@ import {useReport} from './app/state';
 import {DefinitionsDialog} from './components/DefinitionsDialog';
 import {FilterBar} from './components/FilterBar';
 import {DiscoveryOptions, DiscoveryStrip} from './components/DiscoveryOptions';
+import {useLock} from './components/PasswordGate';
 import {REPORTING_DATE, REPORTING_WEEK, CURRENT_FY} from './data/calendar';
 import {usDate} from './lib/format';
 
@@ -36,6 +37,7 @@ const skeleton = (
 export default function App() {
   const [page, setPage] = useState<PageId>(readPage);
   const meta = pageById.get(page)!;
+  const lock = useLock();
   const Page = PAGE_COMPONENTS[page];
 
   // Deep links (?page=…) as in BC2; the browser back button moves between report pages.
@@ -71,6 +73,9 @@ export default function App() {
         <div className="top-actions">
           <DefinitionsDialog />
           <DiscoveryOptions />
+          <button type="button" className="header-button" onClick={lock} title="End this access session">
+            Lock
+          </button>
           <img className="brand-partner" src="/wizelinered.svg" alt="Wizeline" width={38} height={28} />
         </div>
       </header>

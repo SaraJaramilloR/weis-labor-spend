@@ -1,6 +1,6 @@
 // Interaction check: drives headless Chrome over the DevTools Protocol (clicks, filters, sorting, search,
 // dialogs, simulated access) and reports console errors. Requires Google Chrome and Node 22+.
-// Usage: npm run build && npm run preview -- --port 5176   then   node scripts/check-interactions.mjs http://localhost:5176/
+// Usage: npm run build && npm run preview -- --port 5176   then   ACCESS_TEST_PASSWORD=… node scripts/check-interactions.mjs http://localhost:5176/
 import {spawn} from 'node:child_process';
 import {mkdtempSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -24,7 +24,15 @@ try {
   await new Promise(r => ws.addEventListener('open', r));
   ws.addEventListener('message', e => { const m = JSON.parse(e.data); if (m.id && pending.has(m.id)) { pending.get(m.id)(m); pending.delete(m.id); } if (m.method === 'Runtime.exceptionThrown') errors.push(m.params.exceptionDetails.exception?.description?.slice(0, 200)); if (m.method === 'Runtime.consoleAPICalled' && m.params.type === 'error') errors.push(m.params.args.map(a => a.value ?? a.description).join(' ').slice(0, 200)); });
   await send('Runtime.enable'); await send('Page.enable');
-  const go = async url => { await send('Page.navigate', {url}); await sleep(6000); };
+  const PW = process.env.ACCESS_TEST_PASSWORD ?? '';
+  const go = async url => {
+    await send('Page.navigate', {url}); await sleep(6000);
+    // Demo access screen: log in with ACCESS_TEST_PASSWORD (never printed); the session lasts for this tab.
+    if (PW && (await evalJs(`!!document.querySelector('#report-password')`))) {
+      await evalJs(`(() => { const i = document.querySelector('#report-password'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, ${JSON.stringify(PW)}); i.dispatchEvent(new Event('input', {bubbles: true})); i.closest('form').requestSubmit(); })()`);
+      await sleep(4000);
+    }
+  };
   const text = sel => evalJs(`document.querySelector(${JSON.stringify(sel)})?.textContent ?? null`);
   const click = expr => evalJs(`(() => { const el = ${expr}; if (!el) return false; el.click(); return true; })()`);
   const setSelect = (label, value) => evalJs(`(() => { const l = [...document.querySelectorAll('label')].find(x => x.textContent.trim() === ${JSON.stringify(label)}); const s = l && document.getElementById(l.htmlFor); if (!s) return false; const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; setter.call(s, ${JSON.stringify(value)}); s.dispatchEvent(new Event('change', {bubbles: true})); return true; })()`);

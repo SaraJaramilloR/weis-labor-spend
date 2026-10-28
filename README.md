@@ -22,6 +22,23 @@ npm run preview      # http://localhost:4173
 
 Deep links open a page directly: `?page=overview`, `allocation`, `budget`, `daily`, `tracking`, `benchmark`, `people`.
 
+## Demo access screen
+
+The report opens behind a demo password screen (same design and behavior as BC3). **It is a demo barrier, not security.**
+
+- No password is stored in the repository and there is no default password. Without configuration the screen fails closed ("Access is not configured").
+- Only a salted SHA-256 hash is used, through `VITE_ACCESS_PASSWORD_HASH`. Like every `VITE_*` variable, it is embedded in the public JavaScript bundle at build time, so it is **not a secret**: the plain password is not in the bundle, but anyone can read the hash and try to guess a weak password offline. Use a long, unique passphrase and share it outside the repository.
+- Access lasts for the browser tab session; the header **Lock** button ends it. Changing the password ends existing sessions.
+
+Set or change the password locally (prompted twice, hidden; only the hash is written to the git-ignored `.env.local`):
+
+```bash
+npm run set-access-password
+npm run dev
+```
+
+For Vercel, add the same hash as the `VITE_ACCESS_PASSWORD_HASH` environment variable (Production) and redeploy. Do not paste the password into Vercel, chat or commits.
+
 ## Checks
 
 ```bash
@@ -29,7 +46,8 @@ npm run typecheck
 npm run lint
 npm run test                                   # formulas, reconciliation, exclusions, snapshots, filters, CSV, content guards
 npm run build && npm run preview -- --port 5176
-node scripts/check-interactions.mjs http://localhost:5176/   # headless Chrome interaction check (needs Google Chrome)
+node scripts/check-interactions.mjs http://localhost:5176/   # headless Chrome interaction check (build without the gate hash, or log in first)
+ACCESS_TEST_PASSWORD=… node scripts/check-access-gate.mjs <url>   # demo access screen, direct links and the six views
 ```
 
 ## Pages
@@ -76,4 +94,5 @@ references/       client files, read during development only (never bundled, nev
 - CSV export writes only the filtered synthetic rows and neutralizes spreadsheet formulas.
 - Filter values are validated before they reach state (`sanitizeFilters`).
 - Dependencies are pinned and come from the official npm registry. Generate an SBOM before sharing a build: `npx @cyclonedx/cyclonedx-npm --output-file sbom.json`.
-- The prototype is not deployed. Any deployment needs server-side access protection and security headers (CSP, X-Frame-Options) set by the host.
+- `vercel.json` sets security headers (CSP, X-Frame-Options, nosniff, Referrer-Policy, Permissions-Policy, HSTS).
+- The demo access screen is not security. Real protection needs platform-level or server-side authentication.

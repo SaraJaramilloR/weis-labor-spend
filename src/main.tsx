@@ -7,13 +7,17 @@ import '@fontsource/nunito-sans/800.css';
 import '@fontsource/space-mono/700.css';
 import './styles/base.css';
 import './styles/report.css';
+import './styles/access.css';
 import App from './App';
 import {ReportProvider} from './app/state';
+import {PasswordGate} from './components/PasswordGate';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ReportProvider>
-      <App />
-    </ReportProvider>
+    <PasswordGate>
+      <ReportProvider>
+        <App />
+      </ReportProvider>
+    </PasswordGate>
   </StrictMode>,
 );
