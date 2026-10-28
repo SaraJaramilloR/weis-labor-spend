@@ -27,7 +27,7 @@ Deep links open a page directly: `?page=overview`, `allocation`, `budget`, `dail
 The report opens behind a demo password screen (same design and behavior as BC3). **It is a demo barrier, not security.**
 
 - No password is stored in the repository and there is no default password. Without configuration the screen fails closed ("Access is not configured").
-- Only a salted SHA-256 hash is used, through `VITE_ACCESS_PASSWORD_HASH`. Like every `VITE_*` variable, it is embedded in the public JavaScript bundle at build time, so it is **not a secret**: the plain password is not in the bundle, but anyone can read the hash and try to guess a weak password offline. Use a long, unique passphrase and share it outside the repository.
+- Only a salted SHA-256 hash is used, through `VITE_ACCESS_PASSWORD_HASH`. Like every `VITE_*` variable, it is embedded in the public JavaScript bundle at build time, so it is **not a secret**: the plain password is not in the bundle, but anyone can read the hash and try to guess a weak password offline. The script accepts 7 to 200 characters; a short or common password is easy to guess from the hash, which is acceptable only because this is a demo barrier in front of synthetic data. Share it outside the repository.
 - Access lasts for the browser tab session; the header **Lock** button ends it. Changing the password ends existing sessions.
 
 Set or change the password locally (prompted twice, hidden; only the hash is written to the git-ignored `.env.local`):

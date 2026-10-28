@@ -1,6 +1,7 @@
 // Sets the demo access password locally WITHOUT storing it: prompts twice (hidden input), then writes only the
 // salted SHA-256 hash to .env.local as VITE_ACCESS_PASSWORD_HASH (.env.local is ignored by Git and Vercel).
-// The hash is embedded in the public bundle at build time: it is NOT a secret. Use a long, unique passphrase.
+// The hash is embedded in the public bundle at build time: it is NOT a secret, and a short or common password
+// can be guessed from it. Acceptable only as a demo barrier in front of synthetic data.
 // Usage: npm run set-access-password
 import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
@@ -29,8 +30,8 @@ if (first !== second) {
   console.error('The passwords do not match. Nothing was changed.');
   process.exit(1);
 }
-if (first.length < 12 || first.length > 200) {
-  console.error('Use 12 to 200 characters (a long passphrase is recommended). Nothing was changed.');
+if (first.length < 7 || first.length > 200) {
+  console.error('Use 7 to 200 characters. Nothing was changed.');
   process.exit(1);
 }
 const hash = createHash('sha256').update(SALT + first).digest('hex');

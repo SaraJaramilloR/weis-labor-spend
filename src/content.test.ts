@@ -23,7 +23,7 @@ describe('content guards', () => {
     expect(hits).toEqual([]);
   });
   it('contains no demo passwords or secrets', () => {
-    const hits = SRC.filter(f => /BC[23]demo|password\s*[:=]\s*['"`][^'"`]+|api[_-]?key\s*[:=]|VITE_ACCESS_PASSWORD\b(?!_HASH)/i.test(readFileSync(f, 'utf8')));
+    const hits = SRC.filter(f => /BC[2-5]demo|password\s*[:=]\s*['"`][^'"`]+|api[_-]?key\s*[:=]|VITE_ACCESS_PASSWORD\b(?!_HASH)/i.test(readFileSync(f, 'utf8')));
     expect(hits).toEqual([]);
   });
   it('keeps the required glossary terms', () => {
