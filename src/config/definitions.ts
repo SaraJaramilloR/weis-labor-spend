@@ -89,7 +89,7 @@ export const DECISIONS: Decision[] = [
   {id: 'D18', title: 'UC5 reporting calendar confirmation', handling: 'Implemented as in UC1 (BC3 fiscal.ts) and the Ops date table. Consistent implementations are not a UC5 approval. 53-week years are not modeled.', owner: 'Vijay'},
   {id: 'D19', title: 'Sales basis for Labor Rate', handling: 'Labor Rate uses Total Sales, as in the Ops 100 measure; this is not assumed for every Labor Rate measure.', owner: 'James / Rick'},
   {id: 'D20', title: 'Position and Tenure on labor measures', handling: 'Implemented: UKG hours exist per associate, so filters apply to labor actuals. Budget, sales and items are not set by associate (n/a under these filters). Confirm that Ops wants labor filtered this way.', owner: 'Vijay'},
-  {id: 'D21', title: 'Hourly sales by time of day', handling: 'Under evaluation; shown as an illustrative curve.', owner: 'James'},
+  {id: 'D21', title: 'Hourly sales by time of day', handling: 'Deferred: not shown. Source availability and business use are not confirmed.', owner: 'James'},
   {id: 'D22', title: 'Attendance incident calculation', handling: 'Illustrative associate-level events counted by type; all view filters apply (home-department attribution, D06). The calculation is pending and the synthetic events do not prove source availability.', owner: 'James'},
   {id: 'D23', title: 'Average hours per FT / PT associate', handling: 'Implemented as the workbook draft (average of row-level averages, positive values only). Confirm whether an unweighted average of rows is intended.', owner: 'Vijay'},
   {id: 'D24', title: 'Sales per square foot rule', handling: 'Uses all-department store sales and ignores the Department filter.', owner: 'James'},

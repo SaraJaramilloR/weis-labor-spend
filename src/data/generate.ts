@@ -287,11 +287,3 @@ export const laborByWeek: LaborFact[][] = WEEKS.map(() => []);
 for (const f of LABOR_FACTS) laborByWeek[f.w].push(f);
 export const storeWeekByWeek: StoreWeekFact[][] = WEEKS.map(() => []);
 for (const f of STORE_WEEK_FACTS) storeWeekByWeek[f.w].push(f);
-
-/** Illustrative hourly sales profile, 6 AM to 11 PM (D21: hourly sales are under evaluation). */
-export const HOURS_OF_DAY = Array.from({length: 18}, (_, i) => i + 6);
-export const HOURLY_SHARE: number[] = (() => {
-  const raw = HOURS_OF_DAY.map(h => Math.exp(-((h - 11.5) ** 2) / 8) * 0.8 + Math.exp(-((h - 17.5) ** 2) / 5) + 0.12);
-  const total = raw.reduce((a, b) => a + b, 0);
-  return raw.map(r => r / total);
-})();

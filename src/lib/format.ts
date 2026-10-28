@@ -50,4 +50,3 @@ export function shortDay(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
   return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]} ${iso.slice(5, 7)}/${iso.slice(8, 10)}`;
 }
-export const hourLabel = (h: number) => `${((h + 11) % 12) + 1} ${h < 12 ? 'AM' : 'PM'}`;

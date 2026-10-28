@@ -15,6 +15,8 @@ import {peopleKpis, peopleRollup, peopleTotal, type PeopleGroup, type PeopleTota
 import {ANIMATE, AXIS, C, ChartKey, TipBox} from '../visuals/chartTheme';
 
 const META = pageById.get('people')!;
+const FT_HELP = 'Full-time ratio = FT headcount / (FT headcount + PT headcount), using ending headcount. Headcount based, not hours.';
+const PT_HELP = 'Part-time ratio = PT headcount / (FT headcount + PT headcount), using ending headcount. Headcount based, not hours.';
 type Breakdown = Exclude<PeopleGroup, 'none' | 'dept'>;
 const BREAKDOWNS: {id: Breakdown; label: string}[] = [
   {id: 'recruiter', label: 'Recruiter'},
@@ -58,8 +60,8 @@ export default function PeoplePage() {
     {key: 'hires', header: 'Hires', value: r => r.p.hires, render: r => fmt.int(r.p.hires)},
     {key: 'terms', header: 'Terminations', value: r => r.p.terms, render: r => fmt.int(r.p.terms)},
     {key: 'turnover', header: 'Turnover', value: turnover, render: r => fmt.pct(turnover(r))},
-    {key: 'ft', header: 'FT share', value: r => headcountShare(r.p.ftEnd, r.p.ftEnd, r.p.ptEnd), render: r => fmt.pct(headcountShare(r.p.ftEnd, r.p.ftEnd, r.p.ptEnd), 0)},
-    {key: 'pt', header: 'PT share', value: r => headcountShare(r.p.ptEnd, r.p.ftEnd, r.p.ptEnd), render: r => fmt.pct(headcountShare(r.p.ptEnd, r.p.ftEnd, r.p.ptEnd), 0)},
+    {key: 'ft', header: 'Full-time ratio', sub: '% of ending headcount', help: FT_HELP, value: r => headcountShare(r.p.ftEnd, r.p.ftEnd, r.p.ptEnd), render: r => fmt.pct(headcountShare(r.p.ftEnd, r.p.ftEnd, r.p.ptEnd), 0)},
+    {key: 'pt', header: 'Part-time ratio', sub: '% of ending headcount', help: PT_HELP, value: r => headcountShare(r.p.ptEnd, r.p.ftEnd, r.p.ptEnd), render: r => fmt.pct(headcountShare(r.p.ptEnd, r.p.ftEnd, r.p.ptEnd), 0)},
   ];
   const chart = rows.map(r => ({name: r.name, end: r.p.end, hires: r.p.hires, terms: r.p.terms, turnover: turnover(r)}));
   const tenureNote = by === 'tenure' ? 'Tenure is measured on the snapshot or event date: hires are always "< 90 days"; terminations use tenure at termination.' : null;
@@ -79,8 +81,8 @@ export default function PeoplePage() {
             <KpiCard level="primary" label="Hires" value={fmt.int(k.hires)} />
             <KpiCard level="primary" label="Terminations" value={fmt.int(k.terms)} hint="Workday supplies a single termination type." />
             <KpiCard level="primary" label="Turnover rate" value={fmt.pct(k.turnover)} decisions={['D12']} lines={[{label: 'Avg headcount', value: fmt.dec1(k.avg)}]} />
-            <KpiCard label="Full-time share" value={fmt.pct(k.ftShare, 0)} hint="FT / (FT + PT) ending headcount. Headcount based, not hours." />
-            <KpiCard label="Part-time share" value={fmt.pct(k.ptShare, 0)} />
+            <KpiCard label="Full-time ratio" value={fmt.pct(k.ftShare, 0)} hint={FT_HELP} />
+            <KpiCard label="Part-time ratio" value={fmt.pct(k.ptShare, 0)} hint={PT_HELP} />
           </section>
 
           <VisualCard

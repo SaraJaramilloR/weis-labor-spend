@@ -57,7 +57,7 @@ ACCESS_TEST_PASSWORD=… node scripts/check-access-gate.mjs <url>   # demo acces
 | Labor Overview (landing, design proposal — not a workbook view) | Operational overview | Where labor spend and hours sit against the selected reference, with labor rate, IPLH, AHR, overtime, hours vs projection and sales context |
 | Store Ops Labor Allocation | Store Ops Labor Allocation (US1) | Store and department sales, customers, hours, spend, productivity and overtime; AIV and inflation shown separately |
 | Headcount & Hours vs Budget | Headcount & Hours vs Budget (US4) | Region › District › Store hours, spend and AHR vs reference, overtime and current headcount; spend variance vs sales variance by store |
-| Daily Labor vs Budget | Daily Labor vs Budget (US5) | Day-level hours and spend vs Budget or MDoc for the last 8 weeks; hourly sales under evaluation |
+| Daily Labor vs Budget | Daily Labor vs Budget (US5) | Day-level hours and spend vs Budget or MDoc for the last 8 weeks, by day, store and department |
 | Turnover, Overtime & Call-off Tracking | Turnover, Overtime & Call-off Tracking (US2) | People and time-and-attendance KPIs with a chain average next to each KPI |
 | Turnover & Retention Benchmark | Turnover & Retention Benchmark (US3) | Turnover and retention by store and over time versus chain and region |
 | People Reporting (Filterable Ops 200) | People Reporting · Filterable Ops 200 | Headcount, hires, terminations, turnover and FT / PT by recruiter, age, tenure, position, location |

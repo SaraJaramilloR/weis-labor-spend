@@ -242,10 +242,3 @@ export function dailyRollup(stores: Set<string>, dept: 'All' | DeptId, w: number
   }
   return out;
 }
-
-/** Store-day sales for the illustrative hourly curve (all departments: hourly sales are store level). */
-export function dailyStoreSales(stores: Set<string>, w: number, day: number | 'all'): number {
-  let s = 0;
-  for (const f of DAILY_FACTS) if (f.w === w && stores.has(f.store) && (day === 'all' || f.day === day)) s += f.sales;
-  return s;
-}

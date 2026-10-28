@@ -1,5 +1,5 @@
 import {useId, useMemo, useState} from 'react';
-import {Bar, BarChart, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
+import {Bar, CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import {pageById} from '../app/pages';
 import {useReport} from '../app/state';
 import {useScope} from '../app/useScope';
@@ -7,14 +7,14 @@ import {DataTable, type Column} from '../components/DataTable';
 import {KpiCard} from '../components/KpiCard';
 import {HoursVar, MoneyVar, PctVar} from '../components/kpiLines';
 import {VisualFilters} from '../components/scope';
-import {DecisionChip, EmptyState, IllustrativeChip, PageHeading, Segmented} from '../components/ui';
+import {EmptyState, PageHeading, Segmented} from '../components/ui';
 import {VisualCard} from '../components/VisualCard';
 import {DAY_NAMES, LAST_WEEK_IDX, WEEKS, addDays} from '../data/calendar';
-import {DAILY_FIRST_WEEK_IDX, HOURLY_SHARE, HOURS_OF_DAY, type DailyFact} from '../data/generate';
+import {DAILY_FIRST_WEEK_IDX, type DailyFact} from '../data/generate';
 import {deptById, storeById} from '../data/org';
-import {dailyRollup, dailyStoreSales, type DailyTotals} from '../lib/aggregate';
+import {dailyRollup, type DailyTotals} from '../lib/aggregate';
 import {storeScope} from '../lib/filters';
-import {fmt, hourLabel, shortDay, usDate} from '../lib/format';
+import {fmt, shortDay, usDate} from '../lib/format';
 import {variance, variancePct} from '../lib/metrics';
 import {ANIMATE, AXIS, C, ChartKey, TipBox} from '../visuals/chartTheme';
 
@@ -72,8 +72,6 @@ export default function DailyPage() {
   ];
 
   const chartRows = [...byDay.entries()].map(([d, t]) => ({day: Number(d), label: shortDay(addDays(info.start, Number(d))), hours: t.hours, ref: rh(t), pay: t.pay, payRef: rp(t)})).sort((a, b) => a.day - b.day);
-  const hourlyBase = useMemo(() => dailyStoreSales(stores, week, day), [stores, week, day]);
-  const hourly = HOURS_OF_DAY.map((h, i) => ({h, label: hourLabel(h), sales: hourlyBase * HOURLY_SHARE[i]}));
   const dayLabel = day === 'all' ? `Week beginning ${usDate(info.start)}` : `${DAY_NAMES[day]} ${usDate(addDays(info.start, day))}`;
 
   return (
@@ -129,7 +127,7 @@ export default function DailyPage() {
             <KpiCard label="Hours variance %" value={fmt.signedPct(variancePct(totalT.hours, rh(totalT)))} lines={[{label: 'Spend variance %', value: <PctVar actual={totalT.pay} target={rp(totalT)} />}]} />
           </section>
 
-          <VisualCard title={`Daily labor hours vs ${refName}`} filters={<VisualFilters scope={scope} notes={[`Week beginning ${usDate(info.start)}. The Day selector filters the table, cards and hourly sales; this chart always shows the full week.`]} />}>
+          <VisualCard title={`Daily labor hours vs ${refName}`} filters={<VisualFilters scope={scope} notes={[`Week beginning ${usDate(info.start)}. The Day selector filters the table and cards; this chart always shows the full week.`]} />}>
             <ChartKey items={[{label: 'Actual hours', color: C.actual}, {label: refName, color: C.reference, kind: 'line'}]} />
             <div className="chart-h280">
               <ResponsiveContainer width="100%" height="100%">
@@ -153,20 +151,6 @@ export default function DailyPage() {
             <DataTable rows={rows} columns={columns} rowKey={r => r.id} label="Daily labor vs target" searchText={groupBy === 'day' ? undefined : r => r.name} pinned={[{id: 'total', name: 'Total', t: totalT}]} pinnedLabel={() => 'Total'} initialSort={groupBy === 'day' ? {key: 'name', dir: 'asc'} : {key: 'hoursVar', dir: 'desc'}} exportName={`daily-labor-${info.start}`} />
           </VisualCard>
 
-          <VisualCard title={`Hourly sales by time of day · ${dayLabel}`} actions={<><IllustrativeChip text="Under evaluation · illustrative" /><DecisionChip ids={['D21']} label="Open" /></>} filters={<VisualFilters scope={scope} ignoreDept notes={['Hourly sales are store level (all departments). The hourly curve is illustrative: hour-level sales are not modeled in the synthetic data.']} />}>
-            <div className="chart-h220">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={hourly} margin={{top: 8, right: 12, left: 8, bottom: 0}}>
-                  <CartesianGrid stroke={C.grid} vertical={false} />
-                  <XAxis dataKey="label" tick={AXIS} interval={1} />
-                  <YAxis tick={AXIS} width={56} tickFormatter={v => fmt.compactMoney(v)} />
-                  <Tooltip cursor={{fill: '#f3f2f1'}} content={({active, payload}) => (active && payload?.[0] ? <TipBox title={payload[0].payload.label} rows={[{label: 'Sales (illustrative)', value: fmt.money(payload[0].payload.sales)}]} /> : null)} />
-                  <Bar dataKey="sales" fill={C.sales} isAnimationActive={ANIMATE} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="note">Included to evaluate whether sales by hour helps staffing decisions. Daily totals are real synthetic values; the split by hour is a fixed illustrative profile.</p>
-          </VisualCard>
         </>
       )}
     </div>
