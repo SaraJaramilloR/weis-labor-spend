@@ -26,9 +26,12 @@ describe('content guards', () => {
     const hits = SRC.filter(f => /BC[2-5]demo|password\s*[:=]\s*['"`][^'"`]+|api[_-]?key\s*[:=]|VITE_ACCESS_PASSWORD\b(?!_HASH)/i.test(readFileSync(f, 'utf8')));
     expect(hits).toEqual([]);
   });
-  it('keeps the required glossary terms', () => {
-    const terms = GLOSSARY.map(g => g.term).join(' ');
-    for (const t of ['OPS', 'IPLH', 'AHR', 'OT', 'RX', 'FT', 'PT', 'MDoc', 'TY', 'LY', 'WTD', 'QTD', 'YTD', 'ID Stores']) expect(terms).toContain(t);
+  it('keeps the required glossary terms, one entry per acronym, sorted alphabetically', () => {
+    const terms = GLOSSARY.map(g => g.term);
+    for (const t of ['AHR', 'AIV', 'FT', 'HC', 'IPLH', 'LY', 'MDoc', 'OPS', 'OT', 'PT', 'RX', 'TY']) expect(terms).toContain(t);
+    expect(terms.some(t => t.startsWith('ID '))).toBe(true);
+    expect(terms.join(' ')).toContain('WTD / PTD / QTD / YTD');
+    expect(terms).toEqual([...terms].sort((a, b) => a.localeCompare(b, 'en', {sensitivity: 'base'})));
   });
   it('labels unresolved rules: every referenced decision exists', () => {
     const ids = new Set(DECISIONS.map(d => d.id));

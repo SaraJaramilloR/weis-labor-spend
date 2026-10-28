@@ -1,4 +1,5 @@
 import {lazy, Suspense, useEffect, useState} from 'react';
+import {NavContext} from './app/nav';
 import {isPageId, PAGES, pageById, type PageId} from './app/pages';
 import {useReport} from './app/state';
 import {DefinitionsDialog} from './components/DefinitionsDialog';
@@ -85,9 +86,11 @@ export default function App() {
         </aside>
         <DiscoveryStrip />
         <FilterBar page={meta} />
-        <Suspense fallback={skeleton}>
-          <Page />
-        </Suspense>
+        <NavContext.Provider value={go}>
+          <Suspense fallback={skeleton}>
+            <Page />
+          </Suspense>
+        </NavContext.Provider>
       </main>
       <nav className="page-tabs" aria-label="Report pages">
         {PAGES.map(p => {

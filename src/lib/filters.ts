@@ -84,7 +84,10 @@ export const DEFAULT_FILTERS: Filters = {
   benchmark: 'weighted',
 };
 
-export type ResolvedTime = {ok: true; from: number; to: number; label: string; detail: string; partial: boolean} | {ok: false; error: string};
+/** `wholeWeeks`: set when custom dates do not start on a Sunday and end on a Saturday. Weekly views read weekly
+ *  facts (the Ops 100 grain is store × department × week), so the range is widened to whole weeks and the
+ *  interface must say so; it never shows a weekly total as if it covered only the selected days. */
+export type ResolvedTime = {ok: true; from: number; to: number; label: string; detail: string; partial: boolean; wholeWeeks?: {selected: string; note: string}} | {ok: false; error: string};
 
 const rangeLabel = (a: WeekInfo, b: WeekInfo) => `${usDate(a.start)} – ${usDate(b.end)}`;
 const weekLabel = (w: WeekInfo) => `FY${w.fy} W${String(w.week).padStart(2, '0')}`;
@@ -124,7 +127,14 @@ export function resolveTime(t: TimeSelection): ResolvedTime {
   const a = WEEKS[from];
   const b = WEEKS[to];
   const partial = t.mode === 'calendar' && to === LAST_WEEK_IDX && (t.unit === 'FY' ? b.week < 52 : false);
-  return {ok: true, from, to, label, detail: `${rangeLabel(a, b)} · ${from === to ? weekLabel(a) : `${weekLabel(a)}–${weekLabel(b)}`}`, partial};
+  const detail = `${rangeLabel(a, b)} · ${from === to ? weekLabel(a) : `${weekLabel(a)}–${weekLabel(b)}`}`;
+  let wholeWeeks: {selected: string; note: string} | undefined;
+  if (t.mode === 'custom' && (t.from !== a.start || t.to !== b.end)) {
+    const selected = t.from === t.to ? usDate(t.from) : `${usDate(t.from)} – ${usDate(t.to)}`;
+    const days = Math.round((Date.parse(b.end) - Date.parse(a.start)) / 86_400_000) + 1;
+    wholeWeeks = {selected, note: `Weekly data: the selected ${t.from === t.to ? 'day' : 'dates'} (${selected}) ${t.from === t.to ? 'is' : 'are'} reported as the full week${from === to ? '' : 's'} ${rangeLabel(a, b)} (${days} days). Day-level labor hours and spend are in Daily Labor vs Budget.`};
+  }
+  return {ok: true, from, to, label, detail, partial, ...(wholeWeeks ? {wholeWeeks} : {})};
 }
 
 /** Number of weeks in a resolved range. */

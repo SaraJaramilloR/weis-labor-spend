@@ -3,7 +3,7 @@
 // retention can be computed with the right mechanics. The UI never shows an individual associate (D10).
 import {LAST_WEEK_IDX, WEEKS, addDays, parseIso} from './calendar';
 import {STORES, type DeptId} from './org';
-import {STORE_DEPT_BASE} from './generate';
+import {STORE_DEPT_BASE, openRamp, staffFactor} from './generate';
 import {between, hashSeed, mulberry32} from '../lib/prng';
 
 export const POSITIONS = ['Cashier', 'Clerk', 'Department Manager', 'Assistant Store Manager', 'Store Manager', 'Meat Cutter', 'Baker', 'Pharmacist', 'Pharmacy Technician', 'Barista'] as const;
@@ -69,8 +69,12 @@ function positionFor(dept: DeptId, type: EmploymentType, rnd: () => number): Pos
 }
 
 /** The roster is sized from the synthetic labor facts: for each store × department, full-time and part-time
- *  headcount = hours of that employment type / typical weekly hours. Terminated associates are replaced in the
- *  same department and employment type, so row-level average productive hours stay coherent with the facts. */
+ *  headcount = hours of that employment type / typical weekly hours. The wanted headcount follows the store's
+ *  staffing scenario (growth, stable or reduction, the same trend as its labor hours) and the opening ramp of new
+ *  stores. Hires fill the gap to the wanted headcount; a reduction happens through attrition (terminated associates
+ *  are not replaced), never through forced exits. Every associate is one hire event and at most one termination
+ *  event: there are no transfers or rehires, so Ending = Beginning + Hires − Terminations for any population
+ *  whose attributes do not change over time. */
 function generateAssociates(): Associate[] {
   const out: Associate[] = [];
   STORES.forEach((store, si) => {
@@ -84,8 +88,10 @@ function generateAssociates(): Associate[] {
     const openMs = store.openWeekIdx > 0 ? parseIso(WEEKS[store.openWeekIdx].start) : START;
     const active = slots.map(() => [] as Associate[]);
     // Opening roster: tenure skewed short for part-time associates.
+    const level = (w: number) => staffFactor(store.id, w) * openRamp(store, w);
     slots.forEach((slot, k) => {
-      for (let n = 0; n < slot.target; n++) {
+      const opening = Math.round(slot.target * level(store.openWeekIdx));
+      for (let n = 0; n < opening; n++) {
         const a = make(slot.dept, slot.type, openMs);
         if (store.openWeekIdx === 0) {
           const years = slot.type === 'FT' ? -Math.log(1 - rnd()) * 7 : -Math.log(1 - rnd()) * 1.6;
@@ -112,7 +118,7 @@ function generateAssociates(): Associate[] {
             list.splice(j, 1);
           }
         }
-        const wanted = Math.round(slot.target * (slot.type === 'PT' ? seasonal : 1));
+        const wanted = Math.round(slot.target * level(w) * (slot.type === 'PT' ? seasonal : 1));
         while (list.length < wanted) {
           const a = make(slot.dept, slot.type, weekStart + Math.floor(rnd() * 7) * DAY);
           list.push(a);

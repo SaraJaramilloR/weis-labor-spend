@@ -91,7 +91,8 @@ export function addFact(t: LaborTotals, f: LaborFact) {
   }
 }
 
-export type GroupKey = 'none' | 'week' | 'period' | 'store' | 'district' | 'region' | 'dept';
+/** `storeDept`: one group per store × department (key `store|dept`), for the Store → Department table. */
+export type GroupKey = 'none' | 'week' | 'period' | 'store' | 'district' | 'region' | 'dept' | 'storeDept';
 
 function keyOf(group: GroupKey, f: {w: number; store: string; dept?: DeptId}): string {
   switch (group) {
@@ -111,12 +112,15 @@ function keyOf(group: GroupKey, f: {w: number; store: string; dept?: DeptId}): s
       return storeById.get(f.store)?.regionId ?? '';
     case 'dept':
       return f.dept ?? 'all';
+    case 'storeDept':
+      return `${f.store}|${f.dept ?? 'all'}`;
   }
 }
 
 export type Rollup = {labor: LaborTotals; store: StoreTotals};
 
-/** Rolls labor and store-level facts into groups. `dept` filters labor measures only. */
+/** Rolls labor and store-level facts into groups. `dept` filters labor measures only. Department groups carry no
+ *  store-level totals: department transactions overlap, so a department row uses its own `labor.tx`. */
 export function rollup(stores: Set<string>, dept: 'All' | DeptId, from: number, to: number, group: GroupKey = 'none'): Map<string, Rollup> {
   const out = new Map<string, Rollup>();
   const get = (k: string) => {
@@ -130,7 +134,7 @@ export function rollup(stores: Set<string>, dept: 'All' | DeptId, from: number, 
       if (!stores.has(f.store)) continue;
       const r = get(keyOf(group, f));
       if (dept === 'All' || f.dept === dept) addFact(r.labor, f);
-      if (group === 'dept') continue;
+      if (group === 'dept' || group === 'storeDept') continue;
       r.store.storeSales += f.sales;
       r.store.storeSalesLY += f.salesLY;
       r.store.storeItems += f.items;
@@ -145,7 +149,7 @@ export function rollup(stores: Set<string>, dept: 'All' | DeptId, from: number, 
         r.store.sqft += storeById.get(f.store)?.sqft ?? 0;
       }
     }
-    if (group === 'dept') continue;
+    if (group === 'dept' || group === 'storeDept') continue;
     for (const s of storeWeekByWeek[w] ?? []) {
       if (!stores.has(s.store)) continue;
       const r = get(keyOf(group, s));

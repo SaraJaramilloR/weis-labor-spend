@@ -51,8 +51,8 @@ try {
   for (const [id, title] of views) {
     await go(base + `?page=${id}`);
     const h = await text('h1');
-    const kpis = await ev(`document.querySelectorAll('.kpi').length`);
-    check(`Direct link ?page=${id}`, h === title && kpis > 0, `${h} · ${kpis} KPI cards`);
+    const visuals = await ev(`document.querySelectorAll('.kpi, .visual-card').length`);
+    check(`Direct link ?page=${id}`, h === title && visuals > 0, `${h} · ${visuals} cards and visuals`);
   }
   check('Static assets load (logo)', await ev(`(async () => (await fetch('/weis-1-logo-svg-vector.svg')).ok)()`));
   check('Fonts load', await ev(`document.fonts.ready.then(() => document.fonts.check('16px "Nunito Sans"'))`));

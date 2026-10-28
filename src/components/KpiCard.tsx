@@ -7,7 +7,7 @@ export type KpiLine = {label: string; value: ReactNode};
  * KPI card. `level` sets the visual hierarchy: primary cards lead the page, secondary cards add context.
  * A card with `pending` shows the reason instead of a value, so a missing definition never reads as 0.
  */
-export function KpiCard({label, value, lines = [], hint, decisions, pending, level = 'secondary', tag}: {label: string; value: ReactNode; lines?: KpiLine[]; hint?: string; decisions?: string[]; pending?: string; level?: 'primary' | 'secondary'; tag?: string}) {
+export function KpiCard({label, value, lines = [], hint, decisions, pending, level = 'secondary', tag}: {label: string; value: ReactNode; lines?: KpiLine[]; hint?: ReactNode; decisions?: string[]; pending?: string; level?: 'primary' | 'secondary'; tag?: string}) {
   return (
     <div className={`kpi kpi-${level}`}>
       <div className="kpi-head">

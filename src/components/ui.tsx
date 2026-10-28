@@ -1,12 +1,41 @@
-import {useId, type ReactNode} from 'react';
+import {useEffect, useId, useRef, useState, type ReactNode} from 'react';
 import {decisionById} from '../config/definitions';
 
-/** Accessible tooltip: opens on hover and on keyboard focus (BC3 pattern). */
+/** Accessible tooltip (BC3 pattern): opens on hover and keyboard focus, and click / tap pins it open until a
+ *  second click, Escape or a click elsewhere. */
 export function InfoTip({text, label = 'About this measure', align = 'center'}: {text: ReactNode; label?: string; align?: 'center' | 'left' | 'right'}) {
   const id = useId();
+  // open: pinned by click / tap. dismissed: closed with Escape or a second click while hovered or focused.
+  const [open, setOpen] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || !ref.current?.contains(document.activeElement) && !open) return;
+      setOpen(false);
+      setDismissed(true);
+    };
+    const onPress = (e: PointerEvent) => open && ref.current && !ref.current.contains(e.target as Node) && setOpen(false);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('pointerdown', onPress);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('pointerdown', onPress);
+    };
+  }, [open]);
+  const reset = () => setDismissed(false);
   return (
-    <span className={`info-tip align-${align}`}>
-      <button type="button" aria-label={label} aria-describedby={id}>
+    <span ref={ref} className={`info-tip align-${align}${open ? ' open' : ''}${dismissed ? ' dismissed' : ''}`} onMouseLeave={reset} onBlur={reset}>
+      <button
+        type="button"
+        aria-label={label}
+        aria-describedby={id}
+        aria-expanded={open}
+        onClick={() => {
+          setDismissed(open);
+          setOpen(!open);
+        }}
+      >
         i
       </button>
       <span role="tooltip" id={id}>
@@ -47,12 +76,12 @@ export function IllustrativeChip({text = 'Illustrative'}: {text?: string}) {
 
 /** Page heading (UC1 / UC2 pattern: eyebrow, title, business question). The question restates the workbook
  *  user story; design-proposal pages pass none. */
-export function PageHeading({eyebrow, title, question, children}: {eyebrow: string; title: string; question?: string | null; children?: ReactNode}) {
+export function PageHeading({eyebrow, title, question, children, subtle = false}: {eyebrow: string; title: string; question?: string | null; children?: ReactNode; subtle?: boolean}) {
   return (
     <>
       <div className="page-heading">
         <div>
-          <span className="eyebrow">{eyebrow}</span>
+          <span className={subtle ? 'eyebrow subtle' : 'eyebrow'}>{eyebrow}</span>
           <h1>{title}</h1>
         </div>
         {children ? <div className="heading-actions">{children}</div> : null}

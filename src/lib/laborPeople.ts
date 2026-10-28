@@ -70,6 +70,7 @@ function groupOf(group: GroupKey, f: LaborFact): string {
   if (group === 'none') return 'all';
   if (group === 'store') return f.store;
   if (group === 'dept') return f.dept;
+  if (group === 'storeDept') return `${f.store}|${f.dept}`;
   if (group === 'district') return storeById.get(f.store)?.districtId ?? '';
   if (group === 'region') return storeById.get(f.store)?.regionId ?? '';
   if (group === 'week') return String(f.w);

@@ -2,7 +2,7 @@ import {useEffect, useId, useState, type ReactNode} from 'react';
 import {useReport} from '../app/state';
 import type {PageMeta} from '../app/pages';
 import {LAST_WEEK_IDX, WEEKS} from '../data/calendar';
-import {DEPARTMENTS, DISTRICTS, GEOGRAPHIES, REGIONS, STATES} from '../data/org';
+import {DEPARTMENTS, DISTRICTS, GEOGRAPHIES, REGIONS, STATES, type Store} from '../data/org';
 import {AGE_RANGES, POSITIONS, RECRUITERS, TENURE_BANDS} from '../data/people';
 import {ALL, calendarUnits, changedFilters, DEFAULT_TIME, FISCAL_YEARS, resolveTime, ROLLING, storesForRole, TO_DATE_SPANS, type TimeMode, type TimeSelection} from '../lib/filters';
 import {usDate} from '../lib/format';
@@ -89,6 +89,9 @@ export function FilterBar({page}: {page: PageMeta}) {
             </select>
           )}
         </Field>
+        {page.filters.storeSearch ? (
+          <StoreSearch stores={stores} value={filters.store} onChange={store => update({store})} locked={role.kind === 'store'} />
+        ) : (
         <Field label="Store">
           {id => (
             <select id={id} value={filters.store} onChange={e => update({store: e.target.value})}>
@@ -101,6 +104,7 @@ export function FilterBar({page}: {page: PageMeta}) {
             </select>
           )}
         </Field>
+        )}
         <button type="button" className={`fb-more${moreCount ? ' has-value' : ''}`} aria-expanded={more} onClick={() => setMore(m => !m)}>
           More filters{moreCount ? ` (${moreCount})` : ''} {more ? '▴' : '▾'}
         </button>
@@ -156,6 +160,58 @@ export function FilterBar({page}: {page: PageMeta}) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+const storeLabel = (s: Store) => `${s.name} · #${s.number}`;
+
+/** Searchable Store control: type a store number or name; options follow the Region / District selection. */
+function StoreSearch({stores, value, onChange, locked}: {stores: Store[]; value: string; onChange: (id: string) => void; locked: boolean}) {
+  const listId = useId();
+  const selected = stores.find(s => s.id === value);
+  const [text, setText] = useState(selected ? storeLabel(selected) : '');
+  useEffect(() => setText(selected ? storeLabel(selected) : ''), [selected]);
+  const commit = (raw: string) => {
+    const q = raw.trim().toLowerCase();
+    if (!q) return onChange(ALL);
+    const hit = stores.find(s => storeLabel(s).toLowerCase() === q || String(s.number) === q.replace(/^#/, '') || s.name.toLowerCase() === q);
+    if (hit) onChange(hit.id);
+    else setText(selected ? storeLabel(selected) : '');
+  };
+  return (
+    <Field label="Store">
+      {id => (
+        <span className="fb-store-search">
+          <input
+            id={id}
+            type="text"
+            list={listId}
+            value={text}
+            placeholder={`All stores · ${stores.length} in scope`}
+            disabled={locked}
+            autoComplete="off"
+            maxLength={40}
+            onChange={e => {
+              setText(e.target.value);
+              const exact = stores.find(s => storeLabel(s) === e.target.value);
+              if (exact) onChange(exact.id);
+            }}
+            onBlur={e => commit(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && commit(e.currentTarget.value)}
+          />
+          <datalist id={listId}>
+            {stores.map(s => (
+              <option key={s.id} value={storeLabel(s)} />
+            ))}
+          </datalist>
+          {value !== ALL && !locked ? (
+            <button type="button" className="btn-link" onClick={() => onChange(ALL)} aria-label="Clear store selection">
+              Clear
+            </button>
+          ) : null}
+        </span>
+      )}
+    </Field>
   );
 }
 
@@ -273,7 +329,7 @@ function TimeRow() {
       {resolved.ok ? (
         <output className="fb-resolved">
           {resolved.detail}
-          {draft.mode === 'custom' ? ' · snapped to whole weeks' : ''}
+          {draft.mode === 'custom' && !resolved.wholeWeeks ? ' · whole weeks' : ''}
           {resolved.partial ? ' · in progress' : ''}
         </output>
       ) : (
@@ -281,6 +337,12 @@ function TimeRow() {
           {resolved.error} The previous time frame is still applied.
         </p>
       )}
+      {resolved.ok && resolved.wholeWeeks ? (
+        <p className="fb-weeks-note" role="status">
+          <span aria-hidden="true">◆ </span>
+          {resolved.wholeWeeks.note}
+        </p>
+      ) : null}
     </div>
   );
 }

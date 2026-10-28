@@ -20,6 +20,26 @@ import {ANIMATE, AXIS, C, TipBox} from '../visuals/chartTheme';
 
 const META = pageById.get('tracking')!;
 
+/** Card and column tooltips: full name, meaning, formula, unit, time frame and limitations. */
+const HELP = {
+  turnover: 'Turnover rate, % = Terminations / average headcount, average headcount = (beginning + ending headcount) / 2, for the selected time frame. Draft until OPS 201 is reviewed (D12).',
+  terms: 'Terminations: number of associates whose employment ended in the time frame (count of events).',
+  hires: 'Hires: number of associates hired in the time frame (count of events). Independent of terminations; not a ratio.',
+  begin: 'Beginning headcount: active associates the day before the time frame starts (snapshot).',
+  end: 'Ending headcount: active associates on the last day of the time frame (snapshot). Ending = Beginning + Hires − Terminations for the same population.',
+  ft: 'Full-time share of ending headcount, % = FT associates / (FT + PT associates). Headcount based, not hours. The part-time share is 100 % minus this value.',
+  otPay: 'Overtime (OT) $: overtime pay, excluding Pharmacy (RX). Whether the source field is the full overtime pay or only the premium is open (D04).',
+  otHrs: 'Overtime (OT) hours worked, excluding Pharmacy (RX).',
+  otRate: 'Overtime rate, % of payroll dollars. Numerator: overtime $ of all departments except Pharmacy (RX). Denominator: total payroll $ (labor spend) of the same departments, also excluding Pharmacy. Both are dollars, not hours. Ops 100 "OT Less RX Rate" = OT Less RX OT $ / OT Less RX Pay. No 0.5 % status rule is applied (D03).',
+  callHrs: 'Call-off hours (draft) = actual hours − projected (scheduled) hours. Ops 100 "Hours vs Proj Ct (Call Off)". A negative value means fewer hours were worked than projected. It is an hours variance, not a count of call-offs or an absence rate (D05).',
+  proj: 'Call-off % (draft) = (actual hours − projected hours) / projected hours. Ops 100 "Hours vs Proj % (Call Off)". Not an attendance-based absence rate; the 2 % opportunity flag is not applied (D05).',
+  inc: 'Attendance incidents: count of illustrative associate-level events (late in, absences, no call no show, sick unpaid, half shift unworked). Counted toward the associate home department (D06). The calculation is open (D22).',
+  avgFt: 'Average weekly hours per full-time associate. Calculated as in the workbook draft (Ops 100 "UKG FT Average Pro Hours"): for each store × department × week, FT hours / active FT associates; then the simple average of those row values (positive values only). Rows are not weighted by headcount, so it is not exactly total FT hours / FT associates (D23).',
+  avgPt: 'Average weekly hours per part-time associate. Same method as FT: simple average of store × department × week averages, positive values only (D23).',
+  avgCard: 'Workbook "Average hours per employee", calculated as the Ops 100 draft (UKG FT / PT Average Pro Hours): for each store × department × week, hours of the employment type / its active associates; then the simple average of those row values, positive values only. Unit: hours per associate per week, for the weeks in the time frame. Not weighted by headcount (D23).',
+  vac: 'Vacation hours: total in the time frame for the stores, departments and associates in scope; shown separately from actual hours (D17). Weekly data: a custom range is reported as whole weeks.',
+} as const;
+
 type StoreRow = {id: string; name: string; district: string; p: PeopleTotals; hcAll: PeopleTotals; l: LaborTotals; incidents: number; pro: {ft: number | null; pt: number | null}};
 
 const turnover = (r: StoreRow) => turnoverRate(r.p.terms, r.p.begin, r.p.end);
@@ -82,23 +102,22 @@ export default function TrackingPage() {
   const chainCount = (v: string) => ({label: single ? 'Chain avg' : 'Chain avg per store', value: v});
 
   const columns: Column<StoreRow>[] = [
-    {key: 'name', header: 'Store', value: r => r.name, align: 'left'},
-    {key: 'district', header: 'District', value: r => r.district, align: 'left'},
-    {key: 'turnover', header: 'Turnover', value: turnover, render: r => fmt.pct(turnover(r)), group: 'People (Workday)'},
-    {key: 'terms', header: 'Terms', value: r => r.p.terms, render: r => fmt.int(r.p.terms), group: 'People (Workday)'},
-    {key: 'hires', header: 'Hires', value: r => r.p.hires, render: r => fmt.int(r.p.hires), group: 'People (Workday)'},
-    {key: 'begin', header: 'Begin HC', value: r => r.p.begin, render: r => fmt.int(r.p.begin), group: 'People (Workday)'},
-    {key: 'end', header: 'End HC', value: r => r.p.end, render: r => fmt.int(r.p.end), group: 'People (Workday)'},
-    {key: 'ft', header: 'FT share', value: ftShare, render: r => fmt.pct(ftShare(r), 0), group: 'People (Workday)'},
-    {key: 'otPay', header: 'OT $', value: r => r.l.otPay, render: r => fmt.money(r.l.otPay), group: 'Time & attendance (UKG)'},
-    {key: 'otHrs', header: 'OT hrs', value: r => r.l.otHours, render: r => fmt.int(r.l.otHours), group: 'Time & attendance (UKG)'},
-    {key: 'otRate', header: 'OT rate', sub: 'excl. RX', value: ot, render: r => fmt.pct(ot(r), 2), group: 'Time & attendance (UKG)'},
-    {key: 'callHrs', header: 'Call-off hrs', sub: 'draft', value: r => r.l.hours - r.l.hoursProj, render: r => fmt.signedInt(r.l.hours - r.l.hoursProj), group: 'Time & attendance (UKG)'},
-    {key: 'proj', header: 'Call-off %', sub: 'draft', value: vsProj, render: r => fmt.signedPct(vsProj(r)), group: 'Time & attendance (UKG)'},
-    {key: 'inc', header: 'Incidents', sub: 'illustrative', value: r => r.incidents, render: r => fmt.int(r.incidents), group: 'Time & attendance (UKG)'},
-    {key: 'avgFt', header: 'Avg hrs FT', sub: 'avg pro hours', value: avgFt, render: r => fmt.dec1(avgFt(r)), group: 'Time & attendance (UKG)'},
-    {key: 'avgPt', header: 'Avg hrs PT', sub: 'avg pro hours', value: avgPt, render: r => fmt.dec1(avgPt(r)), group: 'Time & attendance (UKG)'},
-    {key: 'vac', header: 'Vacation hrs', value: r => r.l.vacHours, render: r => fmt.int(r.l.vacHours), group: 'Time & attendance (UKG)'},
+    {key: 'name', header: 'Store', value: r => r.name, render: r => <>{r.name}<span className="cell-sub">{r.district}</span></>, align: 'left'},
+    {key: 'turnover', header: 'Turnover rate', sub: '%', help: HELP.turnover, value: turnover, render: r => fmt.pct(turnover(r)), group: 'People (Workday)'},
+    {key: 'terms', header: 'Terminations', sub: 'count', help: HELP.terms, value: r => r.p.terms, render: r => fmt.int(r.p.terms), group: 'People (Workday)'},
+    {key: 'hires', header: 'Hires', sub: 'count', help: HELP.hires, value: r => r.p.hires, render: r => fmt.int(r.p.hires), group: 'People (Workday)'},
+    {key: 'begin', header: 'Beginning headcount', help: HELP.begin, value: r => r.p.begin, render: r => fmt.int(r.p.begin), group: 'People (Workday)'},
+    {key: 'end', header: 'Ending headcount', help: HELP.end, value: r => r.p.end, render: r => fmt.int(r.p.end), group: 'People (Workday)'},
+    {key: 'ft', header: 'Full-time (%)', sub: 'of ending headcount', help: HELP.ft, value: ftShare, render: r => fmt.pct(ftShare(r), 0), group: 'People (Workday)'},
+    {key: 'otPay', header: 'Overtime $', help: HELP.otPay, value: r => r.l.otPay, render: r => fmt.money(r.l.otPay), group: 'Time & attendance (UKG)'},
+    {key: 'otHrs', header: 'Overtime hours', help: HELP.otHrs, value: r => r.l.otHours, render: r => fmt.int(r.l.otHours), group: 'Time & attendance (UKG)'},
+    {key: 'otRate', header: 'Overtime rate', sub: '% of payroll $, excl. Pharmacy', help: HELP.otRate, value: ot, render: r => fmt.pct(ot(r), 2), group: 'Time & attendance (UKG)'},
+    {key: 'callHrs', header: 'Call-off hours', sub: 'draft · vs projected', help: HELP.callHrs, value: r => r.l.hours - r.l.hoursProj, render: r => fmt.signedInt(r.l.hours - r.l.hoursProj), group: 'Time & attendance (UKG)'},
+    {key: 'proj', header: 'Call-off %', sub: 'draft · vs projected', help: HELP.proj, value: vsProj, render: r => fmt.signedPct(vsProj(r)), group: 'Time & attendance (UKG)'},
+    {key: 'inc', header: 'Attendance incidents', sub: 'illustrative', help: HELP.inc, value: r => r.incidents, render: r => fmt.int(r.incidents), group: 'Time & attendance (UKG)'},
+    {key: 'avgFt', header: 'Avg weekly hours FT', sub: 'per associate · row avg', help: HELP.avgFt, value: avgFt, render: r => fmt.dec1(avgFt(r)), group: 'Time & attendance (UKG)'},
+    {key: 'avgPt', header: 'Avg weekly hours PT', sub: 'per associate · row avg', help: HELP.avgPt, value: avgPt, render: r => fmt.dec1(avgPt(r)), group: 'Time & attendance (UKG)'},
+    {key: 'vac', header: 'Vacation hours', help: HELP.vac, value: r => r.l.vacHours, render: r => fmt.int(r.l.vacHours), group: 'Time & attendance (UKG)'},
   ];
   const benchRow: StoreRow = chainTot;
   const benchColumns: Column<StoreRow>[] = columns.map(c => {
@@ -137,17 +156,46 @@ export default function TrackingPage() {
       ) : (
         <>
           <section className="kpi-grid six" aria-label="People and attendance summary">
-            <KpiCard level="primary" label="Turnover rate" value={fmt.pct(turnover(tot))} hint="Terminations / average headcount ((beginning + ending) / 2). Must match today's OPS 201 logic, still to be reviewed." decisions={['D12']} lines={[chainLine(fmt.pct(bench(turnover)))]} />
-            <KpiCard level="primary" label="Terminations / hires" value={`${fmt.int(tot.p.terms)} / ${fmt.int(tot.p.hires)}`} lines={[chainCount(`${fmt.dec1(perStore(r => r.p.terms))} / ${fmt.dec1(perStore(r => r.p.hires))}`)]} />
-            <KpiCard level="primary" label="Headcount begin → end" value={`${fmt.int(tot.p.begin)} → ${fmt.int(tot.p.end)}`} hint="Snapshots at the start and end of the time frame; never summed across weeks." lines={[chainCount(`${fmt.dec1(perStore(r => r.p.begin))} → ${fmt.dec1(perStore(r => r.p.end))}`)]} />
-            <KpiCard label="FT / PT share" value={`${fmt.pct(ftShare(tot), 0)} / ${fmt.pct(headcountShare(tot.p.ptEnd, tot.p.ftEnd, tot.p.ptEnd), 0)}`} hint="Share of ending headcount (not hours)." lines={[chainLine(`${fmt.pct(bench(ftShare), 0)} FT`)]} />
-            <KpiCard label="Average hours FT / PT" value={`${fmt.dec1(avgFt(tot))} / ${fmt.dec1(avgPt(tot))}`} hint="Workbook R31 (Ops 100 UKG FT / PT Average Pro Hours): average of the row-level average productive hours per associate (row = store × department × week), positive values only. Weekly hours per associate." decisions={['D23']} lines={[chainLine(`${fmt.dec1(bench(avgFt))} / ${fmt.dec1(bench(avgPt))}`)]} />
-            <KpiCard label="Vacation hours" value={fmt.int(tot.l.vacHours)} decisions={['D17']} lines={[chainCount(fmt.int(perStore(r => r.l.vacHours)))]} />
-            <KpiCard level="primary" label="Overtime $ (excl. RX)" value={fmt.compactMoney(tot.l.otPay)} decisions={['D03', 'D04']} lines={[{label: 'Hours', value: fmt.int(tot.l.otHours)}, chainCount(fmt.compactMoney(perStore(r => r.l.otPay)))]} />
-            <KpiCard level="primary" label="Overtime rate (excl. RX)" value={fmt.pct(ot(tot), 2)} hint="OT $ / payroll $, both excluding Pharmacy. The OPS 102 0.5% criterion is not applied as a status." decisions={['D03']} lines={[chainLine(fmt.pct(bench(ot), 2))]} />
-            <KpiCard level="primary" label="Call-off hours (draft)" value={fmt.signedInt(tot.l.hours - tot.l.hoursProj)} hint="Workbook draft (Ops 100 'Hours vs Proj Ct (Call Off)'): actual hours − projected (scheduled) hours. This hours variance is not an attendance-based absence rate: call-off events and partial absences are not identified." decisions={['D05']} lines={[chainCount(fmt.signedInt(perStore(r => r.l.hours - r.l.hoursProj)))]} />
-            <KpiCard label="Attendance incidents" value={fmt.int(tot.incidents)} tag="Illustrative" decisions={['D22']} lines={[chainCount(fmt.dec1(perStore(r => r.incidents)))]} hint="Illustrative associate-level incident events (synthetic). All view filters apply; incidents count toward the associate's home department (D06). The incident calculation is still to be confirmed (D22)." />
-            <KpiCard level="primary" label="Call-off % (draft)" value={fmt.signedPct(vsProj(tot))} hint="Workbook draft (Ops 100 'Hours vs Proj % (Call Off)'): (actual − projected hours) / projected hours. Not an attendance-based absence rate. The workbook's 2% opportunity flag is not applied as a rule." decisions={['D05']} lines={[chainLine(fmt.signedPct(bench(vsProj)))]} />
+            <KpiCard level="primary" label="Turnover rate" value={fmt.pct(turnover(tot))} hint="Terminations / average headcount, where average headcount = (beginning + ending headcount) / 2, for the time frame. Must match today's OPS 201 logic, still to be reviewed." decisions={['D12']} lines={[chainLine(fmt.pct(bench(turnover)))]} />
+            <KpiCard
+              level="primary"
+              label="Terminations & hires"
+              value={
+                <span className="dual-value">
+                  <span className="nowrap">
+                    {fmt.int(tot.p.terms)} <small>Terminations</small>
+                  </span>{' '}
+                  ·{' '}
+                  <span className="nowrap">
+                    {fmt.int(tot.p.hires)} <small>Hires</small>
+                  </span>
+                </span>
+              }
+              hint="Two independent counts of events in the time frame, not a ratio: associates who left (terminations) and associates who joined (hires). In a stable store hires replace leavers, so the two counts are close; they differ when a store is growing or reducing staff."
+              lines={[{label: 'Net change (hires − terminations)', value: fmt.signedInt(tot.p.hires - tot.p.terms)}, {label: single ? 'Chain avg terminations' : 'Chain avg terminations per store', value: fmt.dec1(perStore(r => r.p.terms))}, {label: single ? 'Chain avg hires' : 'Chain avg hires per store', value: fmt.dec1(perStore(r => r.p.hires))}]}
+            />
+            <KpiCard
+              level="primary"
+              label="Beginning → ending headcount"
+              value={`${fmt.int(tot.p.begin)} → ${fmt.int(tot.p.end)}`}
+              hint="Active associates the day before the time frame starts and on its last day (snapshots, never summed across weeks). For the same population, Ending = Beginning + Hires − Terminations. With a Tenure filter, associates move between tenure bands during the time frame, shown as other movements."
+              lines={[{label: 'Beginning + hires − terminations', value: fmt.int(tot.p.begin + tot.p.hires - tot.p.terms)}, {label: 'Other movements', value: fmt.signedInt(tot.p.end - (tot.p.begin + tot.p.hires - tot.p.terms))}, chainCount(`${fmt.dec1(perStore(r => r.p.begin))} → ${fmt.dec1(perStore(r => r.p.end))}`)]}
+            />
+            <KpiCard label="FT / PT Ratio" value={`${fmt.pct(ftShare(tot), 0)} / ${fmt.pct(headcountShare(tot.p.ptEnd, tot.p.ftEnd, tot.p.ptEnd), 0)}`} hint="Share of ending headcount (not hours)." lines={[chainLine(`${fmt.pct(bench(ftShare), 0)} FT`)]} />
+            <KpiCard
+              label="Average hours per employee (FT / PT)"
+              tag="Weekly · average of row averages"
+              value={`${fmt.dec1(avgFt(tot))} / ${fmt.dec1(avgPt(tot))}`}
+              hint={HELP.avgCard}
+              decisions={['D23']}
+              lines={[chainLine(`${fmt.dec1(bench(avgFt))} / ${fmt.dec1(bench(avgPt))}`)]}
+            />
+            <KpiCard label="Vacation hours" value={fmt.int(tot.l.vacHours)} hint={HELP.vac} decisions={['D17']} lines={[chainCount(fmt.int(perStore(r => r.l.vacHours)))]} />
+            <KpiCard level="primary" label="Overtime $ (excl. Pharmacy)" value={fmt.compactMoney(tot.l.otPay)} hint={HELP.otPay} decisions={['D03', 'D04']} lines={[{label: 'Overtime hours', value: fmt.int(tot.l.otHours)}, chainCount(fmt.compactMoney(perStore(r => r.l.otPay)))]} />
+            <KpiCard level="primary" label="Overtime Rate (% of Payroll $, excl. Pharmacy)" value={fmt.pct(ot(tot), 2)} hint={HELP.otRate} decisions={['D03', 'D04']} lines={[chainLine(fmt.pct(bench(ot), 2))]} />
+            <KpiCard level="primary" label="Call-off hours (draft)" value={fmt.signedInt(tot.l.hours - tot.l.hoursProj)} hint={HELP.callHrs} decisions={['D05']} lines={[chainCount(fmt.signedInt(perStore(r => r.l.hours - r.l.hoursProj)))]} />
+            <KpiCard label="Attendance incidents" value={fmt.int(tot.incidents)} tag="Illustrative" decisions={['D22']} lines={[chainCount(fmt.dec1(perStore(r => r.incidents)))]} hint={HELP.inc} />
+            <KpiCard level="primary" label="Call-off % (draft)" value={fmt.signedPct(vsProj(tot))} hint={HELP.proj} decisions={['D05']} lines={[chainLine(fmt.signedPct(bench(vsProj)))]} />
           </section>
 
           <VisualCard

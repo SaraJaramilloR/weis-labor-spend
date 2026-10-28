@@ -15,6 +15,9 @@ export type PageFilters = {
   idStores: boolean;
   /** Accepts the exploratory secondary comparison (Discovery options). Budget stays primary. */
   exploratoryReference: boolean;
+  /** Store control as a searchable list (type a number or name). On the benchmark page the Store selects the
+   *  store for the trend charts; the store list follows Region / District. */
+  storeSearch?: boolean;
 };
 
 export type PageMeta = {
@@ -27,10 +30,10 @@ export type PageMeta = {
 };
 
 export const PAGES: PageMeta[] = [
-  {id: 'overview', name: 'Labor Overview', eyebrow: 'Proposed summary page · not one of the six workbook views', question: null, filters: {time: true, department: true, people: [], idStores: true, exploratoryReference: true}},
+  {id: 'overview', name: 'Labor Overview', eyebrow: 'Proposed overview', question: null, filters: {time: true, department: true, people: [], idStores: true, exploratoryReference: true}},
   {id: 'allocation', name: 'Store Ops Labor Allocation', eyebrow: 'Workbook view · User Story 1', question: 'Historical labor hours and spend and items per labor hour by store and department, to allocate hours and spend against the labor budget.', filters: {time: true, department: true, people: ['position', 'tenure'], idStores: true, exploratoryReference: false}},
   {id: 'tracking', name: 'Turnover, Overtime & Call-off Tracking', eyebrow: 'Workbook view · User Story 2', question: 'Turnover, overtime and call-off tracking, chain-wide and by store, with a chain-wide average next to each KPI, to identify poor-performing stores.', filters: {time: true, department: true, people: ['position', 'tenure', 'age', 'recruiter'], idStores: false, exploratoryReference: false}},
-  {id: 'benchmark', name: 'Turnover & Retention Benchmark', eyebrow: 'Workbook view · User Story 3', question: 'Where do my stores stand on turnover and retention against the chain and the region, to see where to upskill talent?', filters: {time: true, department: false, people: ['position', 'tenure', 'age', 'recruiter'], idStores: false, exploratoryReference: false}},
+  {id: 'benchmark', name: 'Turnover & Retention Benchmark', eyebrow: 'Workbook view · User Story 3', question: 'Where do my stores stand on turnover and retention against the chain and the region, to see where to upskill talent?', filters: {time: true, department: false, people: ['position', 'tenure', 'age', 'recruiter'], idStores: false, exploratoryReference: false, storeSearch: true}},
   {id: 'budget', name: 'Headcount & Hours vs Budget', eyebrow: 'Workbook view · User Story 4', question: 'Headcount, hours and spend versus budget by region, district and store, to give feedback and address areas where labor spend is higher than budget.', filters: {time: true, department: false, people: [], idStores: false, exploratoryReference: true}},
   {id: 'daily', name: 'Daily Labor vs Budget', eyebrow: 'Workbook view · User Story 5', question: 'A quick daily view of labor hours and spend versus budget for the past week, to make quick staffing decisions.', filters: {time: false, department: true, people: [], idStores: false, exploratoryReference: true}},
   {id: 'people', name: 'People Reporting (Filterable Ops 200)', eyebrow: 'Workbook view · People Reporting', question: 'Headcount, hires, terminations, turnover and full-time / part-time ratio by recruiter, age range and tenure, by store, district, region and state.', filters: {time: true, department: false, people: ['position', 'tenure', 'age', 'recruiter'], idStores: false, exploratoryReference: false}},

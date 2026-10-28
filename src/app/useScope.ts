@@ -34,7 +34,7 @@ export function useScope(pageId: PageId): Scope {
     const effective: Filters = {...filters, idOnly: page.filters.idStores && filters.idOnly};
     const applied: string[] = [];
     const ignored: string[] = [];
-    if (time.ok && page.filters.time) applied.push(`Time frame: ${time.label} (${time.detail})`);
+    if (time.ok && page.filters.time) applied.push(`Time frame: ${time.label} (${time.detail})${time.wholeWeeks ? ` · whole weeks; selected ${time.wholeWeeks.selected}` : ''}`);
     applied.push(locationText(filters));
     if (filters.state !== ALL) applied.push(`State: ${filters.state}`);
     if (filters.geography !== ALL) applied.push(`Geography: ${filters.geography}`);

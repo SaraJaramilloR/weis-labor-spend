@@ -64,7 +64,7 @@ export type DailyFact = {
 };
 
 const SEED = 5;
-const FIRST_GEN_IDX = -WEEKS_PER_YEAR; // FY2024 W01, used only to fill FY2025 last-year values.
+export const FIRST_GEN_IDX = -WEEKS_PER_YEAR; // FY2024 W01, used only to fill FY2025 last-year values.
 
 /** Week-of-year sales index: holiday peaks and a January dip (illustrative). */
 function season(week: number): number {
@@ -72,6 +72,22 @@ function season(week: number): number {
   const base = week <= 4 ? 0.94 : week <= 8 ? 0.97 : 1;
   return (peaks[week] ?? base) * (1 + 0.015 * Math.sin((week / 52) * 2 * Math.PI));
 }
+/** Illustrative staffing scenario per store: labor hours, spend, budget and the associate roster all follow the same
+ *  annual trend, so headcount growth or reduction is visible in hires and terminations. No Weis benchmark is used. */
+export type StaffScenario = 'growth' | 'stable' | 'reduction';
+export const STAFF_TREND = new Map<string, {scenario: StaffScenario; rate: number}>();
+for (const store of STORES) {
+  const r = mulberry32(hashSeed(`staff-${store.id}`));
+  const roll = r();
+  const scenario: StaffScenario = store.openWeekIdx > 0 ? 'stable' : roll < 0.3 ? 'growth' : roll < 0.75 ? 'stable' : 'reduction';
+  const rate = scenario === 'growth' ? between(r, 0.05, 0.09) : scenario === 'reduction' ? -between(r, 0.04, 0.08) : between(r, -0.01, 0.015);
+  STAFF_TREND.set(store.id, {scenario, rate});
+}
+/** Staffing level of a store in a generated week relative to its base (FY2024 W01). */
+export const staffFactor = (storeId: string, i: number) => (1 + (STAFF_TREND.get(storeId)?.rate ?? 0)) ** ((i - FIRST_GEN_IDX) / WEEKS_PER_YEAR);
+/** Opening ramp of a new store: hours (and roster) start at 70 % and reach 100 % in about 8 weeks. */
+export const openRamp = (store: Store, i: number) => (store.openWeekIdx > 0 ? Math.min(1, 0.7 + 0.04 * Math.max(0, i - store.openWeekIdx)) : 1);
+
 const OT_SEASON = (week: number) => (week === 47 || week === 51 || week === 52 ? 1.8 : week === 14 || week === 27 ? 1.3 : 1);
 const VAC_SEASON = (week: number) => (week >= 24 && week <= 35 ? 1.7 : week >= 51 ? 1.5 : 0.8);
 
@@ -136,7 +152,8 @@ function generate() {
       const week = (((i % WEEKS_PER_YEAR) + WEEKS_PER_YEAR) % WEEKS_PER_YEAR) + 1;
       const t = (i - FIRST_GEN_IDX) / WEEKS_PER_YEAR; // years since FY2024 W01
       const open = i >= store.openWeekIdx || store.openWeekIdx === 0;
-      const ramp = store.openWeekIdx > 0 ? Math.min(1, 0.7 + 0.04 * Math.max(0, i - store.openWeekIdx)) : 1;
+      const ramp = openRamp(store, i);
+      const staff = staffFactor(store.id, i);
       const salesTrend = (1 + 0.029 + growth) ** t;
       const wage = 1.035 ** t;
       const aivTrend = 1.023 ** t;
@@ -154,10 +171,12 @@ function generate() {
         const expectedSales = p.salesBase * s * salesTrend * ramp;
         const sales = expectedSales * (1 + noise(rnd, 0.025));
         const ahr = p.dept.ahr * wage * (1 + noise(rnd, 0.01));
-        const expectedPay = p.payBase * (0.55 + 0.45 * s) * wage * salesTrend ** 0.35 * ramp;
+        const expectedPay = p.payBase * (0.55 + 0.45 * s) * wage * staff * ramp;
         const pay = expectedPay * (1 + noise(rnd, 0.022));
         const hours = pay / ahr;
         const otHours = hours * p.ot * OT_SEASON(week) * Math.exp(noise(rnd, 0.25));
+        // Vacation is taken mostly by full-time associates (about 1.8 weeks a year for a 37-hour FT associate).
+        const vacRate = (p.ft * 0.034 + (1 - p.ft) * 0.005) * VAC_SEASON(week);
         const a: Actual = {
           sales,
           items: sales / (p.dept.aiv * aivTrend * (1 + noise(rnd, 0.012))),
@@ -165,7 +184,7 @@ function generate() {
           hours,
           otHours,
           otPay: otHours * ahr * 1.5,
-          vac: hours * 0.021 * VAC_SEASON(week) * (1 + noise(rnd, 0.15)),
+          vac: hours * vacRate * (1 + noise(rnd, 0.15)),
         };
         history[k].set(i, a);
         storeItems += a.items;
