@@ -26,7 +26,8 @@ export type PeopleFilter = Pick<Filters, 'position' | 'tenure' | 'age' | 'recrui
 
 const activeAt = (a: Associate, ms: number) => a.hire <= ms && (a.term === null || a.term > ms);
 
-export type PeopleGroup = 'none' | 'store' | 'district' | 'region' | 'state' | 'recruiter' | 'age' | 'tenure' | 'position' | 'type' | 'dept';
+/** `storeDept`: store × the associate's home department (key `store|dept`). */
+export type PeopleGroup = 'none' | 'store' | 'district' | 'region' | 'state' | 'recruiter' | 'age' | 'tenure' | 'position' | 'type' | 'dept' | 'storeDept';
 
 /** Tenure is evaluated at the event or snapshot date (hires are always "< 90 days"). */
 function groupKey(g: PeopleGroup, a: Associate, at: number): string {
@@ -53,6 +54,8 @@ function groupKey(g: PeopleGroup, a: Associate, at: number): string {
       return a.type;
     case 'dept':
       return a.dept;
+    case 'storeDept':
+      return `${a.store}|${a.dept}`;
   }
 }
 

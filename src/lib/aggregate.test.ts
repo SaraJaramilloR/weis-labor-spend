@@ -93,11 +93,17 @@ describe('scope exclusions', () => {
     expect(k.laborRate).toBeNull();
     expect(k.spendVarPct).toBeNull();
   });
-  it('references stay distinct; MDoc has no Labor Rate and Budget has no IPLH', () => {
+  it('references stay distinct; MDoc sales are not modeled, so MDoc has no Labor Rate', () => {
     const k = laborKpis(t.labor, 'mdoc');
     expect(k.laborRateRef).toBeNull();
-    expect(laborKpis(t.labor, 'budget').iplhRef).toBeNull();
     expect(t.labor.payBud).not.toBe(t.labor.payMdoc);
+    expect(t.labor.hoursBud).not.toBe(t.labor.hoursMdoc);
     expect(t.labor.hoursBud).not.toBe(t.labor.hoursProj);
+    expect(t.labor.itemsBud).not.toBe(t.labor.itemsMdoc);
+  });
+  it('Budget IPLH = Items Budget / Hours Budget and stays separate from MDoc IPLH', () => {
+    const b = laborKpis(t.labor, 'budget').iplhRef;
+    expect(b).toBeCloseTo(t.labor.itemsBud / t.labor.hoursBud, 12);
+    expect(b).not.toBeCloseTo(laborKpis(t.labor, 'mdoc').iplhRef!, 6);
   });
 });

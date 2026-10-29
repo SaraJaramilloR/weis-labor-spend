@@ -6,7 +6,7 @@ import {customerBase, rollup, total} from './aggregate';
 import {DEFAULT_TIME, resolveTime} from './filters';
 import {aiv, iplh, laborRate} from './metrics';
 import {peopleRollup, peopleTotal, type PeopleFilter} from './peopleMetrics';
-import {filterTree, sortRows} from './tableRows';
+import {filterTree, sortRows, sortTree} from './tableRows';
 
 const all = new Set(STORES.map(s => s.id));
 const none: PeopleFilter = {dept: 'All', position: 'All', tenure: 'All', age: 'All', recruiter: 'All'};
@@ -29,11 +29,11 @@ describe('table search and sort', () => {
   it('a child match keeps its parent with only the matching children, opened', () => {
     const out = filterTree(rows, 'deli', text, kids);
     expect(out.map(o => o.row.name)).toEqual(['Store 101 District 01']);
-    expect(out[0].children.map(c => c.name)).toEqual(['Deli']);
+    expect(out[0].children.map(c => c.row.name)).toEqual(['Deli']);
     expect(out[0].openForSearch).toBe(true);
   });
   it('terms combine parent and child text', () => {
-    expect(filterTree(rows, '102 bakery', text, kids)[0].children.map(c => c.name)).toEqual(['Bakery']);
+    expect(filterTree(rows, '102 bakery', text, kids)[0].children.map(c => c.row.name)).toEqual(['Bakery']);
     expect(filterTree(rows, '101 bakery', text, kids)).toHaveLength(0);
   });
   it('terms match the start of a word, not any substring', () => {
@@ -44,6 +44,20 @@ describe('table search and sort', () => {
   it('no match returns no rows; an empty query returns every row', () => {
     expect(filterTree(rows, 'zzz', text, kids)).toHaveLength(0);
     expect(filterTree(rows, '   ', text, kids)).toHaveLength(2);
+  });
+  it('searches and sorts a Region → District → Store → Department tree at every level', () => {
+    const tree: R[] = [
+      {name: 'Region 1', v: 10, kids: [{name: 'District 01', v: 4, kids: rows}, {name: 'District 02', v: 6, kids: [{name: 'Store 106 District 02', v: 6, kids: [{name: 'Meat', v: 6}]}]}]},
+    ];
+    const hit = filterTree(tree, '101 deli', text, kids);
+    expect(hit[0].openForSearch).toBe(true);
+    expect(hit[0].children.map(c => c.row.name)).toEqual(['District 01']);
+    expect(hit[0].children[0].children.map(c => c.row.name)).toEqual(['Store 101 District 01']);
+    expect(hit[0].children[0].children[0].children.map(c => c.row.name)).toEqual(['Deli']);
+    expect(filterTree(tree, 'meat', text, kids)[0].children.map(c => c.row.name)).toEqual(['District 01', 'District 02']);
+    const sorted = sortTree(filterTree(tree, '', text, kids), r => r.v, 'desc');
+    expect(sorted[0].children.map(c => c.row.name)).toEqual(['District 02', 'District 01']);
+    expect(sorted[0].children[1].children[0].children.map(c => c.row.name)).toEqual(['Deli', 'Meat']);
   });
   it('n/a values sort last in both directions', () => {
     expect(sortRows(rows, r => r.v, 'desc').map(r => r.v)).toEqual([3, null]);

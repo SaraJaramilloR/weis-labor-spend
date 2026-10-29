@@ -1,6 +1,6 @@
 import {useDeferredValue, useId, useMemo, useState, type ReactNode} from 'react';
 import {downloadCsv, EXPORT_NOTE, toCsv, type Cell} from '../lib/csv';
-import {filterTree, sortRows, type SortState} from '../lib/tableRows';
+import {filterTree, sortTree, type SortState, type TreeRow} from '../lib/tableRows';
 import {EmptyState, InfoTip} from './ui';
 
 export type Column<R> = {
@@ -18,14 +18,22 @@ export type Column<R> = {
   help?: ReactNode;
 };
 
-/** Two-level tables (for example Store → Department): child rows sit under their parent inside the same table. */
+/** Multi-level tables (Store → Department, Region → District → Store → Department): child rows sit under their
+ *  parent inside the same table. */
 export type TreeOptions<R> = {
   children: (r: R) => R[];
-  /** Level names for the export "Level" column and the toggle label, e.g. ['Store', 'Department']. */
-  levels: [string, string];
-  /** Accessible name of the parent row, used in "Show departments of …". */
+  /** Level names, top first, for the export "Level" column and the toggle label, e.g. ['Store', 'Department']. */
+  levels: string[];
+  /** Accessible name of a row, used in "Show departments of …". */
   name: (r: R) => string;
+  /** Rows open on first render (for example the only region left by a filter). The user can still close them. */
+  defaultOpen?: (r: R) => boolean;
+  /** Parent path of a row for the export "Path" column (e.g. "Chain › Region 1 › District 02"). */
+  path?: (r: R) => string;
 };
+
+type Line<R> = {node: TreeRow<R>; depth: number; parent: R | null; expanded: boolean};
+const plural = (level: string) => `${level.toLowerCase()}s`;
 
 /**
  * Sortable, searchable table with optional pinned rows (totals and benchmarks) that never sort or filter, and an
@@ -49,6 +57,9 @@ export function DataTable<R>({
   maxHeight = 420,
   tree,
   pageSize,
+  rowClickable,
+  stickyFirst = false,
+  countLabel,
 }: {
   rows: R[];
   columns: Column<R>[];
@@ -68,35 +79,44 @@ export function DataTable<R>({
   tree?: TreeOptions<R>;
   /** Rows per page; pagination shows when there are more rows. Export always writes every matching row. */
   pageSize?: number;
+  /** With a tree, which rows `onRowClick` applies to (default: all). */
+  rowClickable?: (r: R) => boolean;
+  /** Keeps the first (label) column visible during horizontal scrolling. */
+  stickyFirst?: boolean;
+  /** Replaces the "x of y rows" count, e.g. to count stores inside a tree. */
+  countLabel?: (visible: TreeRow<R>[]) => string;
 }) {
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortState>(initialSort);
-  const [open, setOpen] = useState<Set<string>>(() => new Set());
+  // Rows the user opened (true) or closed (false); other rows follow tree.defaultOpen.
+  const [open, setOpen] = useState<Map<string, boolean>>(() => new Map());
   const [pageIndex, setPageIndex] = useState(0);
   const deferredQuery = useDeferredValue(query);
   const searchId = useId();
 
   const visible = useMemo(() => {
     const col = sort ? columns.find(c => c.key === sort.key) : undefined;
-    const sorted = (list: R[]) => (sort && col ? sortRows(list, col.value, sort.dir) : list);
     const filtered = filterTree(rows, searchText ? deferredQuery : '', searchText ?? (() => ''), tree?.children);
-    const byRow = new Map(filtered.map(t => [t.row, t]));
-    return sorted(filtered.map(t => t.row)).map(r => {
-      const t = byRow.get(r)!;
-      return {...t, children: sorted(t.children)};
-    });
+    return sort && col ? sortTree(filtered, col.value, sort.dir) : filtered;
   }, [rows, columns, sort, deferredQuery, searchText, tree]);
 
-  const isOpen = (key: string, openForSearch: boolean) => openForSearch || open.has(key);
-  const toggle = (key: string) =>
-    setOpen(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  const allOpen = tree ? visible.every(v => v.children.length === 0 || isOpen(rowKey(v.row), v.openForSearch)) : false;
-  const toggleAll = () => setOpen(allOpen ? new Set() : new Set(visible.map(v => rowKey(v.row))));
+  const isOpen = (n: TreeRow<R>) => n.openForSearch || (open.get(rowKey(n.row)) ?? tree?.defaultOpen?.(n.row) ?? false);
+  const toggle = (n: TreeRow<R>) => setOpen(prev => new Map(prev).set(rowKey(n.row), !isOpen(n)));
+  /** Visible lines of a list of top-level rows: each row, then its children when it is open, at any depth. */
+  const linesOf = (nodes: TreeRow<R>[], depth = 0, parent: R | null = null, out: Line<R>[] = []): Line<R>[] => {
+    for (const node of nodes) {
+      const expanded = Boolean(tree) && node.children.length > 0 && isOpen(node);
+      out.push({node, depth, parent, expanded});
+      if (expanded) linesOf(node.children, depth + 1, node.row, out);
+    }
+    return out;
+  };
+  const parents = (nodes: TreeRow<R>[], out: TreeRow<R>[] = []): TreeRow<R>[] => {
+    for (const n of nodes) if (n.children.length) out.push(n, ...parents(n.children));
+    return out;
+  };
+  const allOpen = tree ? parents(visible).every(isOpen) : false;
+  const toggleAll = () => setOpen(new Map(parents(visible).map(n => [rowKey(n.row), !allOpen])));
 
   const toggleSort = (key: string) => {
     setPageIndex(0);
@@ -105,14 +125,11 @@ export function DataTable<R>({
   const setSortKey = (key: string) => setSort(s => (s?.key === key ? (s.dir === 'desc' ? {key, dir: 'asc'} : null) : {key, dir: 'desc'}));
 
   const exportCsv = () => {
-    const lines: {r: R; level: 0 | 1}[] = [...pinned.map(r => ({r, level: 0 as const}))];
-    for (const v of visible) {
-      lines.push({r: v.row, level: 0});
-      if (isOpen(rowKey(v.row), v.openForSearch)) lines.push(...v.children.map(r => ({r, level: 1 as const})));
-    }
+    const lines: {r: R; level: string}[] = [...pinned.map(r => ({r, level: 'Total'})), ...linesOf(visible).map(l => ({r: l.node.row, level: tree?.levels[l.depth] ?? ''}))];
     const head = columns.map(c => (c.sub ? `${c.header} (${c.sub})` : c.header));
-    const body: Cell[][] = lines.map(({r, level}) => [...(tree ? [tree.levels[level]] : []), ...columns.map(c => c.value(r))]);
-    downloadCsv(exportName ?? label, toCsv(tree ? ['Level', ...head] : head, body, [EXPORT_NOTE]));
+    const withPath = Boolean(tree?.path);
+    const body: Cell[][] = lines.map(({r, level}) => [...(tree ? [level] : []), ...(withPath ? [tree!.path!(r)] : []), ...columns.map(c => c.value(r))]);
+    downloadCsv(exportName ?? label, toCsv(tree ? ['Level', ...(withPath ? ['Path'] : []), ...head] : head, body, [EXPORT_NOTE]));
   };
 
   const pages = pageSize ? Math.max(1, Math.ceil(visible.length / pageSize)) : 1;
@@ -150,11 +167,11 @@ export function DataTable<R>({
           </button>
         ) : null}
         <span className="table-count" aria-live="polite">
-          {visible.length} of {rows.length} {countNoun}
+          {countLabel ? countLabel(visible) : `${visible.length} of ${rows.length} ${countNoun}`}
         </span>
         {tree ? (
           <button type="button" className="btn-link" onClick={toggleAll} disabled={visible.length === 0}>
-            {allOpen ? `Collapse all ${tree.levels[1].toLowerCase()}s` : `Expand all ${tree.levels[1].toLowerCase()}s`}
+            {tree.levels.length === 2 ? `${allOpen ? 'Collapse' : 'Expand'} all ${plural(tree.levels[1])}` : allOpen ? 'Collapse all levels' : 'Expand all levels'}
           </button>
         ) : null}
         {exportName ? (
@@ -164,7 +181,7 @@ export function DataTable<R>({
         ) : null}
       </div>
       <div className="table-wrap" style={{maxHeight}}>
-        <table aria-label={label} className={tree ? 'two-level' : undefined}>
+        <table aria-label={label} className={[tree ? 'tree-rows' : '', stickyFirst ? 'sticky-first' : ''].filter(Boolean).join(' ') || undefined}>
           <thead>
             {groups ? (
               <tr className="group-row">
@@ -221,29 +238,37 @@ export function DataTable<R>({
                 </td>
               </tr>
             ) : (
-              shown.flatMap(v => {
-                const r = v.row;
+              linesOf(shown).map(({node, depth, parent, expanded}) => {
+                const r = node.row;
                 const key = rowKey(r);
-                const expanded = isOpen(key, v.openForSearch);
-                const parent = (
-                  <tr key={key} className={`${onRowClick ? 'clickable' : ''}${selectedKey === key ? ' selected' : ''}${tree ? ' parent-row' : ''}`} aria-selected={onRowClick ? selectedKey === key : undefined}>
+                const clickable = onRowClick && (!rowClickable || rowClickable(r));
+                const classes = [clickable ? 'clickable' : '', selectedKey === key ? 'selected' : '', tree ? `tree-depth-${depth}` : '', tree && node.children.length ? 'parent-row' : '', tree && depth > 0 ? 'child-row' : ''].filter(Boolean).join(' ');
+                const label = (c: Column<R>) =>
+                  clickable ? (
+                    <button type="button" className="rowlink" onClick={() => onRowClick!(r)} aria-pressed={selectedKey === key}>
+                      {cell(c, r)}
+                    </button>
+                  ) : (
+                    cell(c, r)
+                  );
+                return (
+                  <tr key={key} className={classes || undefined} aria-selected={clickable ? selectedKey === key : undefined}>
                     {columns.map((c, i) => (
                       <td key={c.key} className={c.align === 'left' ? 'txt' : ''}>
                         {i === 0 && tree ? (
-                          <span className="tree-cell">
-                            {v.children.length ? (
-                              <button type="button" className="tree-btn" aria-expanded={expanded} disabled={v.openForSearch} onClick={() => toggle(key)} aria-label={`${expanded ? 'Hide' : 'Show'} ${tree.levels[1].toLowerCase()}s of ${tree.name(r)}`}>
+                          <span className="tree-cell" style={depth ? {paddingLeft: depth * 18} : undefined}>
+                            {node.children.length ? (
+                              <button type="button" className="tree-btn" aria-expanded={expanded} disabled={node.openForSearch} onClick={() => toggle(node)} aria-label={`${expanded ? 'Hide' : 'Show'} ${plural(tree.levels[depth + 1] ?? 'row')} of ${tree.name(r)}`}>
                                 <span aria-hidden="true">{expanded ? '−' : '+'}</span>
                               </button>
                             ) : (
                               <span className="tree-spacer" aria-hidden="true" />
                             )}
-                            <span>{cell(c, r)}</span>
+                            <span>{label(c)}</span>
+                            {parent ? <span className="sr-only"> ({tree.levels[depth].toLowerCase()} of {tree.name(parent)})</span> : null}
                           </span>
-                        ) : i === 0 && onRowClick ? (
-                          <button type="button" className="rowlink" onClick={() => onRowClick(r)} aria-pressed={selectedKey === key}>
-                            {cell(c, r)}
-                          </button>
+                        ) : i === 0 ? (
+                          label(c)
                         ) : (
                           cell(c, r)
                         )}
@@ -251,20 +276,6 @@ export function DataTable<R>({
                     ))}
                   </tr>
                 );
-                if (!tree || !expanded) return [parent];
-                return [
-                  parent,
-                  ...v.children.map(ch => (
-                    <tr key={`${key}/${rowKey(ch)}`} className="child-row">
-                      {columns.map((c, i) => (
-                        <td key={c.key} className={c.align === 'left' ? 'txt' : ''}>
-                          {cell(c, ch)}
-                          {i === 0 ? <span className="sr-only"> ({tree.levels[1].toLowerCase()} of {tree.name(r)})</span> : null}
-                        </td>
-                      ))}
-                    </tr>
-                  )),
-                ];
               })
             )}
           </tbody>

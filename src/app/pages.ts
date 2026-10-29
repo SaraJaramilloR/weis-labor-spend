@@ -15,8 +15,8 @@ export type PageFilters = {
   idStores: boolean;
   /** Accepts the exploratory secondary comparison (Discovery options). Budget stays primary. */
   exploratoryReference: boolean;
-  /** Store control as a searchable list (type a number or name). On the benchmark page the Store selects the
-   *  store for the trend charts; the store list follows Region / District. */
+  /** Store control as a searchable list (type a number or name). Like the other location filters, it limits the
+   *  page scope; it is not a separate trend selector. */
   storeSearch?: boolean;
 };
 

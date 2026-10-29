@@ -55,11 +55,11 @@ ACCESS_TEST_PASSWORD=… node scripts/check-access-gate.mjs <url>   # demo acces
 | Page | Workbook view | What it answers |
 | --- | --- | --- |
 | Labor Overview (landing, design proposal — not a workbook view) | Operational overview | Where labor spend and hours sit against the selected reference, with labor rate, IPLH, AHR, overtime, hours vs projection and sales context |
-| Store Ops Labor Allocation | Store Ops Labor Allocation (US1) | Store and department sales, customers, hours, spend, productivity and overtime; AIV and inflation shown separately |
-| Headcount & Hours vs Budget | Headcount & Hours vs Budget (US4) | Region › District › Store hours, spend and AHR vs reference, overtime and current headcount; spend variance vs sales variance by store |
-| Daily Labor vs Budget | Daily Labor vs Budget (US5) | Day-level hours and spend vs Budget or MDoc for the last 8 weeks, by day, store and department |
-| Turnover, Overtime & Call-off Tracking | Turnover, Overtime & Call-off Tracking (US2) | People and time-and-attendance KPIs with a chain average next to each KPI |
-| Turnover & Retention Benchmark | Turnover & Retention Benchmark (US3) | Turnover and retention by store and over time versus chain and region |
+| Store Ops Labor Allocation | Store Ops Labor Allocation (US1) | Region › District › Store › Department sales (vs Budget), items (vs Budget), customers and basket (TY / LY), hours (vs Budget and MDoc), spend, productivity and overtime; AIV and estimated inflation shown separately, with a 52-week history by department |
+| Headcount & Hours vs Budget | Headcount & Hours vs Budget (US4) | Region › District › Store hours, spend, labor rate and AHR vs Budget, overtime and current headcount; Overtime Rate (% of payroll, excl. Pharmacy); hours vs Budget or MDoc; sortable store comparison of labor rate (pp), spend and hours variance |
+| Daily Labor vs Budget | Daily Labor vs Budget (US5) | Day-level hours (vs Budget or MDoc) and spend (vs Budget) for the last 8 weeks, by day, store and department |
+| Turnover, Overtime & Call-off Tracking | Turnover, Overtime & Call-off Tracking (US2) | People and time-and-attendance KPIs with a chain average next to each KPI; stores expand to departments |
+| Turnover & Retention Benchmark | Turnover & Retention Benchmark (US3) | Turnover, retention, hires, terminations and headcount by chain, region, district and store, over time for any selected scope, versus chain and region benchmarks |
 | People Reporting (Filterable Ops 200) | People Reporting · Filterable Ops 200 | Headcount, hires, terminations, turnover and FT / PT by recruiter, age, tenure, position, location |
 
 The header has **Definitions & Open Decisions** (KPI definitions, open decisions, glossary, assumptions) and **Discovery options** (exploratory, off by default): simulated access, the simple benchmark method and a secondary MDoc / prior-year comparison. Budget stays the primary comparison. Simulated access filters data in the browser; it is not security.

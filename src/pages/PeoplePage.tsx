@@ -88,7 +88,7 @@ export default function PeoplePage() {
           <VisualCard
             title={`Headcount, hires and terminations by ${BREAKDOWNS.find(b => b.id === by)!.label.toLowerCase()}`}
             actions={<Segmented label="Breakdown" value={by} options={BREAKDOWNS} onChange={setBy} size="sm" />}
-            subtitle="Choose a breakdown (a Power BI field parameter). Values are aggregates only; no associate-level detail is shown."
+            subtitle="Choose a breakdown. Values are aggregates only; no associate-level detail is shown."
             filters={<VisualFilters scope={scope} notes={[tenureNote, by === 'recruiter' ? 'Recruiter names are illustrative.' : null, 'Age range is not compared with last year (as in today\'s Ops 200 reporting).'].filter(Boolean)} />}
           >
             <ChartKey items={[{label: 'Ending headcount', color: C.comparison}, {label: 'Hires', color: C.sales}, {label: 'Terminations', color: C.actual}]} />

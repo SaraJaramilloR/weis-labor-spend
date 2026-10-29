@@ -1,6 +1,7 @@
 // Proposed overview (not one of the six workbook views): a short summary of labor spend, hours, labor rate and
-// IPLH, with links to the required views for detail. Each KPI keeps the reference the Ops 100 draft uses for it:
-// Budget for spend, hours and labor rate; MDoc for IPLH (no budget items). The reference per KPI is open (D01).
+// IPLH, with links to the required views for detail. Each KPI keeps its primary reference: Budget for spend, hours
+// and labor rate; MDoc for IPLH, as in the OPS107 report. The reference per KPI is open (D01). Oct 28 review: the
+// cards can also be compared with Last Year (card-level control, separate from the chart's own LY option).
 import {useMemo, useState} from 'react';
 import {Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import {PageLink} from '../app/nav';
@@ -10,7 +11,7 @@ import {deptLabel, useScope} from '../app/useScope';
 import {KpiCard} from '../components/KpiCard';
 import {HoursVar, MoneyVar, RateVar, RatioVar} from '../components/kpiLines';
 import {ScopeLine, VisualFilters} from '../components/scope';
-import {EmptyState, PageHeading, Segmented} from '../components/ui';
+import {DecisionChip, EmptyState, InfoTip, PageHeading, Segmented} from '../components/ui';
 import {VisualCard} from '../components/VisualCard';
 import {WEEKS} from '../data/calendar';
 import {DEPARTMENTS, type DeptId} from '../data/org';
@@ -21,7 +22,22 @@ import {iplh, laborRate, variance, variancePct, yoyPct} from '../lib/metrics';
 import {ANIMATE, AXIS, C, ChartKey, TipBox} from '../visuals/chartTheme';
 
 const META = pageById.get('overview')!;
+
+/** Value label outside the bar end: right of positive bars, left of negative bars (never over the category names). */
+function VarianceLabel(props: {x?: number | string; y?: number | string; width?: number | string; height?: number | string; value?: number | string}) {
+  const x = Number(props.x ?? 0);
+  const w = Number(props.width ?? 0);
+  const v = Number(props.value ?? 0);
+  const left = Math.min(x, x + w);
+  const right = Math.max(x, x + w);
+  return (
+    <text x={v < 0 ? left - 4 : right + 4} y={Number(props.y ?? 0) + Number(props.height ?? 0) / 2} dy={4} fontSize={11} fill={C.axis} textAnchor={v < 0 ? 'end' : 'start'}>
+      {fmt.signedCompactMoney(v)}
+    </text>
+  );
+}
 type Measure = 'spend' | 'hours';
+type CardRef = 'primary' | 'ly';
 
 export default function OverviewPage() {
   const scope = useScope('overview');
@@ -29,6 +45,8 @@ export default function OverviewPage() {
   const alt: Target | null = filters.reference === 'mdoc' ? 'mdoc' : null;
   const [measure, setMeasure] = useState<Measure>('spend');
   const [showLY, setShowLY] = useState(false);
+  const [cardRef, setCardRef] = useState<CardRef>('primary');
+  const vsLY = cardRef === 'ly';
 
   const t = useMemo(() => total(scope.stores, scope.dept, scope.from, scope.to), [scope]);
   const k = laborKpis(t.labor, 'budget');
@@ -51,9 +69,22 @@ export default function OverviewPage() {
     .filter((x): x is NonNullable<typeof x> => x !== null)
     .sort((a, b) => (b.v ?? 0) - (a.v ?? 0));
 
+  // Axis padding proportional to the whole range, so a value label always fits beside the bar end (no overlap with names).
+  const deptVals = deptRows.map(d => d.v ?? 0);
+  const deptLo = Math.min(0, ...deptVals);
+  const deptHi = Math.max(0, ...deptVals);
+  const deptPad = (deptHi - deptLo) * 0.22;
+  const rawStep = (deptHi - deptLo + deptPad) / 4 || 1;
+  const mag = 10 ** Math.floor(Math.log10(rawStep));
+  const deptStep = [1, 2, 2.5, 5, 10].map(k => k * mag).find(x => x >= rawStep) ?? 10 * mag;
+  const deptDomain: [number, number] = [deptLo < 0 ? Math.floor((deptLo - deptPad) / deptStep) * deptStep : 0, deptHi > 0 ? Math.ceil((deptHi + deptPad * 0.4) / deptStep) * deptStep : 0];
+  const deptTicks = Array.from({length: Math.round((deptDomain[1] - deptDomain[0]) / deptStep) + 1}, (_, i) => deptDomain[0] + i * deptStep);
   const rate = laborRate(t.labor.pay, t.labor.sales);
   const rateBud = laborRate(t.labor.payBud, t.labor.salesBud);
+  const rateLY = laborRate(t.labor.payLY, t.labor.salesLY);
   const iplhNow = iplh(t.labor.items, t.labor.hours);
+  const iplhMdoc = iplh(t.labor.itemsMdoc, t.labor.hoursMdoc);
+  const iplhLY = iplh(t.labor.itemsLY, t.labor.hoursLY);
   const salesBasis = `Sales basis: Total Sales (Gross Sales of ${deptLabel(scope.dept).toLowerCase()} in scope) ${fmt.compactMoney(t.labor.sales)}, ${fmt.signedPct(yoyPct(t.labor.sales, t.labor.salesLY))} vs LY; Budget sales ${fmt.compactMoney(t.labor.salesBud)}.`;
   const exploratory = alt ? ` Exploratory (Discovery options): vs ${TARGET_LABEL[alt]} ` : '';
 
@@ -65,7 +96,21 @@ export default function OverviewPage() {
         <EmptyState>No labor data for this selection. Try another time frame, location or department, or use Reset filters.</EmptyState>
       ) : (
         <>
-          <section aria-label="Labor summary" className="kpi-grid primary">
+          <div className="card-compare">
+            <span className="card-compare-label" aria-hidden="true">
+              Compare cards with
+            </span>
+            <Segmented label="Compare the four cards with" value={cardRef} options={[{id: 'primary', label: 'Budget / MDoc'}, {id: 'ly', label: 'Last Year'}]} onChange={setCardRef} size="sm" />
+            <InfoTip
+              align="left"
+              label="About the card comparison"
+              text="Applies to the four cards only; the weekly chart has its own LY option. Budget is the current comparison for Labor Spend, Labor Hours and Labor Rate. IPLH uses MDoc (Master Doc, the Ops operational target, not the formal Budget). Official comparison references remain pending business confirmation (D01). Last Year: the same fiscal weeks one year earlier (364 days); Labor Rate differences are in percentage points. Use ID stores in More filters for a like-for-like store base."
+            />
+            <span className="open-legend">
+              <DecisionChip ids={['D01']} label="Open" align="left" /> = Business definition or comparison rule pending confirmation.
+            </span>
+          </div>
+          <section aria-label={`Labor summary, compared with ${vsLY ? 'Last Year' : 'Budget / MDoc'}`} className="kpi-grid primary">
             <KpiCard
               level="primary"
               label="Labor Spend"
@@ -77,7 +122,7 @@ export default function OverviewPage() {
                   {exploratory ? `${exploratory}${fmt.signedPct(variancePct(k.spend, refSpend(t.labor, alt!)))}.` : ''} {salesBasis} Above or below budget is not good or bad by itself.
                 </>
               }
-              lines={[{label: 'vs Budget', value: <MoneyVar actual={k.spend} target={t.labor.payBud} />}]}
+              lines={vsLY ? [{label: 'LY', value: fmt.compactMoney(t.labor.payLY)}, {label: 'vs LY', value: <MoneyVar actual={k.spend} target={t.labor.payLY} />}] : [{label: 'Budget', value: fmt.compactMoney(t.labor.payBud)}, {label: 'vs Budget', value: <MoneyVar actual={k.spend} target={t.labor.payBud} />}]}
             />
             <KpiCard
               level="primary"
@@ -90,7 +135,7 @@ export default function OverviewPage() {
                   {exploratory ? `${exploratory}${fmt.signedPct(variancePct(k.hours, refHours(t.labor, alt!)))}.` : ''}
                 </>
               }
-              lines={[{label: 'vs Budget', value: <HoursVar actual={k.hours} target={t.labor.hoursBud} />}]}
+              lines={vsLY ? [{label: 'LY', value: fmt.compactHours(t.labor.hoursLY)}, {label: 'vs LY', value: <HoursVar actual={k.hours} target={t.labor.hoursLY} />}] : [{label: 'Budget', value: fmt.compactHours(t.labor.hoursBud)}, {label: 'vs Budget', value: <HoursVar actual={k.hours} target={t.labor.hoursBud} />}]}
             />
             <KpiCard
               level="primary"
@@ -99,10 +144,10 @@ export default function OverviewPage() {
               decisions={['D19']}
               hint={
                 <>
-                  Labor spend $ / Total Sales $ for the same stores, departments and weeks. Budget rate = Budgeted labor $ / Budget sales $ = {fmt.pct(rateBud, 2)}. LY rate: {fmt.pct(laborRate(t.labor.payLY, t.labor.salesLY), 2)} ({fmt.pp(variance(rate, laborRate(t.labor.payLY, t.labor.salesLY)))} vs LY). {salesBasis} Differences are in percentage points (pp).
+                  Labor spend $ / Total Sales $ for the same stores, departments and weeks. Budget rate = Budgeted labor $ / Budget sales $ = {fmt.pct(rateBud, 2)}. LY rate = LY labor $ / LY sales $ = {fmt.pct(rateLY, 2)}. {salesBasis} Differences are in percentage points (pp): 9.40% − 9.20% = +0.20 pp.
                 </>
               }
-              lines={[{label: 'vs Budget', value: <RateVar actual={rate} target={rateBud} />}]}
+              lines={vsLY ? [{label: 'LY', value: fmt.pct(rateLY, 2)}, {label: 'vs LY', value: <RateVar actual={rate} target={rateLY} />}] : [{label: 'Budget', value: fmt.pct(rateBud, 2)}, {label: 'vs Budget', value: <RateVar actual={rate} target={rateBud} />}]}
             />
             <KpiCard
               level="primary"
@@ -111,10 +156,10 @@ export default function OverviewPage() {
               decisions={['D01']}
               hint={
                 <>
-                  Items sold / actual labor hours. Compared with MDoc (Master Doc), the Ops 100 reference for IPLH: there are no budget items. MDoc IPLH: {fmt.dec1(iplh(t.labor.itemsMdoc, t.labor.hoursMdoc))}. LY IPLH: {fmt.dec1(iplh(t.labor.itemsLY, t.labor.hoursLY))}.
+                  Items sold / actual labor hours. Current comparison: MDoc (Master Doc, the Ops operational target) = MDoc items / MDoc hours, as in the OPS107 IPLH report; MDoc is not the formal Budget. The Ops 100 model also holds IPLH Budget; the reference for UC5 is open (D01). LY IPLH = LY items / LY hours. Differences are in items per labor hour (and %).
                 </>
               }
-              lines={[{label: 'vs MDoc', value: <RatioVar actual={iplhNow} target={iplh(t.labor.itemsMdoc, t.labor.hoursMdoc)} />}]}
+              lines={vsLY ? [{label: 'LY', value: fmt.dec1(iplhLY)}, {label: 'vs LY', value: <RatioVar actual={iplhNow} target={iplhLY} />}] : [{label: 'MDoc', value: fmt.dec1(iplhMdoc)}, {label: 'vs MDoc', value: <RatioVar actual={iplhNow} target={iplhMdoc} />}]}
             />
           </section>
           <p className="deeper-links">
@@ -130,8 +175,9 @@ export default function OverviewPage() {
                 <>
                   <Segmented label="Measure" value={measure} options={[{id: 'spend', label: 'Labor Spend ($)'}, {id: 'hours', label: 'Labor Hours'}]} onChange={setMeasure} size="sm" />
                   <label className="check">
-                    <input type="checkbox" checked={showLY} onChange={e => setShowLY(e.target.checked)} /> Show LY
+                    <input type="checkbox" checked={showLY} onChange={e => setShowLY(e.target.checked)} /> Show LY on this chart
                   </label>
+                  <InfoTip text="Adds the last-year line (same fiscal weeks one year earlier) to this weekly chart only. It does not change the cards; use Compare cards with for them." label="About Show LY on this chart" align="right" />
                 </>
               }
             >
@@ -180,7 +226,8 @@ export default function OverviewPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={deptRows} layout="vertical" margin={{top: 4, right: 64, left: 8, bottom: 0}} accessibilityLayer>
                     <CartesianGrid stroke={C.grid} horizontal={false} />
-                    <XAxis type="number" tick={AXIS} tickFormatter={v => fmt.signedCompactMoney(v)} />
+                    {/* Padded domain: value labels sit outside each bar end, so negative labels never reach the department names. */}
+                    <XAxis type="number" tick={AXIS} tickFormatter={v => fmt.signedCompactMoney(v)} domain={deptDomain} ticks={deptTicks} />
                     <YAxis type="category" dataKey="name" tick={AXIS} width={128} interval={0} />
                     <ReferenceLine x={0} stroke={C.benchmark} />
                     <Tooltip cursor={{fill: '#f3f2f1'}} content={({active, payload}) => (active && payload?.[0] ? <TipBox title={payload[0].payload.name} rows={[{label: 'Actual', value: fmt.money(payload[0].payload.actual)}, {label: 'Budget', value: fmt.money(payload[0].payload.budget)}, {label: 'Variance', value: `${fmt.signedMoney(payload[0].payload.v)} (${fmt.signedPct(payload[0].payload.pct)})`}]} note="Above or below budget is not good or bad by itself: read it with sales and productivity." /> : null)} />
@@ -188,7 +235,7 @@ export default function OverviewPage() {
                       {deptRows.map(d => (
                         <Cell key={d.id} fill={(d.v ?? 0) >= 0 ? C.above : C.below} />
                       ))}
-                      <LabelList dataKey="v" position="right" fontSize={11} fill={C.axis} formatter={(v: number) => fmt.signedCompactMoney(v)} />
+                      <LabelList dataKey="v" content={VarianceLabel} />
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>

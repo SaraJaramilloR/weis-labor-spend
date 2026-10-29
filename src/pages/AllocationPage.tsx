@@ -3,28 +3,33 @@
 // estimated inflation, sales per square foot, labor hours (TY / LY), labor spend ($ TY / LY), budgeted labor ($),
 // AHR (actual / budget), overtime ($ / hrs), overtime rate (excl. RX), vacation hours, IPLH and labor rate.
 // Filters: date range, region, district, store number, department, position, tenure, state and geography.
-import {useMemo, useState} from 'react';
+// Oct 28 review feedback: the table starts at Region and expands to District, Store and Department; Sales & customers
+// adds sales and items vs Budget and customer count / basket size TY vs LY; Hours & spend adds hours vs Budget and MDoc.
+import {useMemo, useState, type ReactNode} from 'react';
 import {pageById} from '../app/pages';
 import {deptLabel, useScope} from '../app/useScope';
 import {DataTable, type Column} from '../components/DataTable';
 import {KpiCard} from '../components/KpiCard';
-import {PctVar, RateVar, RatioVar} from '../components/kpiLines';
+import {HoursVar, PctVar, RateVar, RatioVar} from '../components/kpiLines';
 import {ScopeLine, VisualFilters} from '../components/scope';
 import {DecisionChip, EmptyState, InfoTip, PageHeading, Segmented} from '../components/ui';
 import {VisualCard} from '../components/VisualCard';
-import {DEPARTMENTS, districtById, regionById, storeById, type DeptId} from '../data/org';
+import {AivHistory} from '../visuals/AivHistory';
+import {DEPARTMENTS, type DeptId} from '../data/org';
 import {customerBase, rollup, total, type LaborTotals, type Rollup} from '../lib/aggregate';
 import {ALL} from '../lib/filters';
 import {fmt} from '../lib/format';
 import {laborForPeople, peopleFilterActive} from '../lib/laborPeople';
+import {buildOrgTree, onlyChildIds, scopeLabel, type OrgNode} from '../lib/orgTree';
 import {ahr, aiv, basketSize, iplh, laborRate, otRate, ppDiff, ratio, salesPerTx, variance, variancePct, yoyChange, yoyPct} from '../lib/metrics';
 
 const META = pageById.get('allocation')!;
 type Group = 'sales' | 'labor' | 'productivity';
-/** One table row: a store (dept = null) or one department of a store. `lp`: labor actuals of the Position / Tenure
- *  population (null when no people filter is active). Store rows come from store totals, never from adding up
- *  department rows, so rates, averages and overlapping department transactions are not summed. */
-type Row = {id: string; name: string; district: string; search: string; dept: DeptId | null; r: Rollup; lp: LaborTotals | null; deptKey: 'All' | DeptId};
+/** One table row: a region, district, store or one department of a store. `lp`: labor actuals of the Position / Tenure
+ *  population (null when no people filter is active). Each level comes from the rollup at that level, never from adding
+ *  up the rows below it, so rates, averages and overlapping department transactions are not summed. `deptKey`: the
+ *  department context of customer measures (the row's department, or the Department filter). */
+type Row = OrgNode<{r: Rollup; lp: LaborTotals | null; deptKey: 'All' | DeptId}>;
 
 const inflation = (l: LaborTotals) => yoyPct(aiv(l.sales, l.items), aiv(l.salesLY, l.itemsLY));
 // Why a value is n/a under a Position / Tenure filter. Actual ratios and budget comparisons have different reasons.
@@ -50,11 +55,23 @@ const HELP = {
   pay: 'Labor spend this year, $: actual payroll dollars as supplied by the source (salaried managers and Starbucks included, no manual additions).',
   payLY: 'Labor spend in the same weeks last year, $.',
   payBud: 'Budgeted labor, $ (budget source per KPI is open, D01).',
+  hoursBud: 'Budgeted labor hours (Ops 100 Warehouse `Hours Budget`, SO 1007). Formal Budget; which reference the dashboard treats as primary is open (D01).',
+  hoursVarBud: 'Hours vs Budget = Actual hours − Budgeted hours (hrs), and (Actual − Budget) / Budget (%). Above or below budget is not good or bad by itself.',
+  hoursMdoc: 'Labor hours in the Master Doc (MDoc), the Ops operational target (Ops 100 `Hours Mdoc`; OPS106 and OPS108 compare hours with MDoc). Kept separate from the formal Budget (D01).',
+  hoursVarMdoc: 'Hours vs MDoc = Actual hours − MDoc hours (hrs), and (Actual − MDoc) / MDoc (%).',
+  salesBud: 'Budgeted sales, $ (Ops 100 Warehouse `Sales Budget`; OPS111 `Dept_Bud`). Whether Budget or MDoc is the sales reference for UC5 is open (D01). Synthetic values.',
+  salesVarBud: 'Sales vs Budget, % = (Gross Sales TY − Sales Budget) / Sales Budget.',
+  itemsBud: 'Budgeted items sold (Ops 100 Warehouse `Items Budget`; OPS111 `Dept_Bud` "Items Bud"). The model also holds Items MDoc, used here only inside IPLH vs MDoc. Whether Budget or MDoc is the items reference for UC5 is open (D01). Synthetic values.',
+  itemsVarBud: 'Items vs Budget, % = (Items TY − Items Budget) / Items Budget.',
+  txLY: 'Customer count last year: transactions in the same fiscal weeks one year earlier, same store or department context.',
+  txYoy: 'Customer count YoY, % = (Transactions TY − Transactions LY) / Transactions LY.',
+  basketLY: 'Basket size last year = Items LY / Transactions LY, in the same store or department context.',
+  basketYoy: 'Basket size YoY, % = (Basket size TY − Basket size LY) / Basket size LY.',
   payVar: 'Labor spend vs Budget, % = (Actual − Budget) / Budget. Above or below budget is not good or bad by itself.',
   ahr: 'Average Hourly Rate (AHR), actual, $ = Labor spend $ / Labor hours.',
   ahrBud: 'Average Hourly Rate (AHR), budget, $ = Budgeted labor $ / Budgeted hours.',
   iplh: 'Items per Labor Hour (IPLH) = Items sold / Actual labor hours.',
-  iplhMdoc: 'IPLH difference vs MDoc (Master Doc) = IPLH actual − (MDoc items / MDoc hours). The Ops 100 draft has no budget items, so IPLH is compared with MDoc.',
+  iplhMdoc: 'IPLH difference vs MDoc (Master Doc) = IPLH actual − (MDoc items / MDoc hours), as in the OPS107 IPLH report. The Ops 100 model also holds Items Budget and IPLH Budget; which reference UC5 uses for IPLH is open (D01).',
   rate: 'Labor rate, % = Labor spend $ / Total Sales $ for the same stores, departments and weeks (sales basis open, D19).',
   rateBud: 'Labor rate difference vs Budget, in percentage points (pp) = actual labor rate − (Budgeted labor $ / Budgeted sales $).',
   otPay: 'Overtime (OT) dollars, excluding Pharmacy (RX). Full overtime pay or premium only is open (D04).',
@@ -63,14 +80,16 @@ const HELP = {
   vac: 'Vacation hours in the time frame, shown separately from actual hours (D17).',
 } as const;
 
-function columnsFor(group: Group, opts: {lyAvailable: boolean}): Column<Row>[] {
-  const L = (r: Row) => r.r.labor; // sales, items, budget: store × department × week
-  const A = (r: Row) => r.lp ?? r.r.labor; // labor actuals, filtered by Position / Tenure when active
-  const filtered = (r: Row) => r.lp !== null;
+function columnsFor(group: Group, opts: {lyAvailable: boolean; customerLY: boolean}): Column<Row>[] {
+  const L = (r: Row) => r.data.r.labor; // sales, items, budget: store × department × week
+  const A = (r: Row) => r.data.lp ?? r.data.r.labor; // labor actuals, filtered by Position / Tenure when active
+  const filtered = (r: Row) => r.data.lp !== null;
   const ly = (r: Row, v: number) => (filtered(r) && !opts.lyAvailable ? null : v);
   const na = (r: Row, v: number | null) => (filtered(r) ? null : v);
-  const naCell = (r: Row, text: string, why: string = NA_BUDGET) => (filtered(r) ? <span className="na" title={why}>n/a</span> : text);
-  const C = (r: Row) => customerBase(r.r, r.deptKey);
+  const naCell = (r: Row, text: ReactNode, why: string = NA_BUDGET) => (filtered(r) ? <span className="na" title={why}>n/a</span> : text);
+  const C = (r: Row) => customerBase(r.data.r, r.data.deptKey);
+  const basket = (r: Row) => basketSize(C(r).items, C(r).tx);
+  const basketLY = (r: Row) => basketSize(C(r).itemsLY, C(r).txLY);
   const noOt = (r: Row) => r.dept === 'rx';
   if (group === 'sales')
     return [
@@ -78,39 +97,51 @@ function columnsFor(group: Group, opts: {lyAvailable: boolean}): Column<Row>[] {
       {key: 'salesLY', header: 'Gross Sales LY', help: HELP.salesLY, value: r => L(r).salesLY, render: r => fmt.money(L(r).salesLY), group: 'Gross sales'},
       {key: 'yoyAmt', header: 'YoY Growth ($)', help: HELP.yoyAmt, value: r => yoyChange(L(r).sales, L(r).salesLY), render: r => fmt.signedMoney(yoyChange(L(r).sales, L(r).salesLY)), group: 'Gross sales'},
       {key: 'yoyPct', header: 'YoY Growth (%)', help: HELP.yoyPct, value: r => yoyPct(L(r).sales, L(r).salesLY), render: r => <PctVar actual={L(r).sales} target={L(r).salesLY} />, group: 'Gross sales'},
+      {key: 'salesBud', header: 'Sales Budget', help: HELP.salesBud, value: r => L(r).salesBud, render: r => fmt.money(L(r).salesBud), group: 'Sales vs Budget'},
+      {key: 'salesVar', header: 'Sales vs Budget', sub: '%', help: HELP.salesVarBud, value: r => variancePct(L(r).sales, L(r).salesBud), render: r => <PctVar actual={L(r).sales} target={L(r).salesBud} />, group: 'Sales vs Budget'},
       {key: 'items', header: 'Items TY', help: HELP.items, value: r => L(r).items, render: r => fmt.int(L(r).items), group: 'Items sold'},
       {key: 'itemsLY', header: 'Items LY', help: HELP.itemsLY, value: r => L(r).itemsLY, render: r => fmt.int(L(r).itemsLY), group: 'Items sold'},
+      {key: 'itemsBud', header: 'Items Budget', help: HELP.itemsBud, value: r => L(r).itemsBud, render: r => fmt.int(L(r).itemsBud), group: 'Items vs Budget'},
+      {key: 'itemsVar', header: 'Items vs Budget', sub: '%', help: HELP.itemsVarBud, value: r => variancePct(L(r).items, L(r).itemsBud), render: r => <PctVar actual={L(r).items} target={L(r).itemsBud} />, group: 'Items vs Budget'},
       {key: 'aiv', header: 'AIV', sub: 'Average Item Value', help: HELP.aiv, value: r => aiv(L(r).sales, L(r).items), render: r => fmt.money2(aiv(L(r).sales, L(r).items)), group: 'Average item value'},
       {key: 'inflation', header: 'AIV % vs LY', sub: 'est. inflation', help: HELP.inflation, value: r => inflation(L(r)), render: r => fmt.signedPct(inflation(L(r))), group: 'Average item value'},
-      {key: 'tx', header: 'Customer count', sub: 'transactions', help: HELP.tx, value: r => C(r).tx, render: r => fmt.int(C(r).tx), group: 'Customers'},
-      {key: 'basket', header: 'Basket size', sub: 'items / transaction', help: HELP.basket, value: r => basketSize(C(r).items, C(r).tx), render: r => fmt.dec2(basketSize(C(r).items, C(r).tx)), group: 'Customers'},
-      {key: 'spt', header: 'Sales / transaction', help: HELP.spt, value: r => salesPerTx(C(r).sales, C(r).tx), render: r => fmt.money2(salesPerTx(C(r).sales, C(r).tx)), group: 'Customers'},
+      {key: 'tx', header: 'Customer count TY', sub: 'transactions', help: HELP.tx, value: r => C(r).tx, render: r => fmt.int(C(r).tx), group: 'Customer count'},
+      ...(opts.customerLY ? [{key: 'txLY', header: 'Customer count LY', sub: 'transactions', help: HELP.txLY, value: (r: Row) => C(r).txLY, render: (r: Row) => fmt.int(C(r).txLY), group: 'Customer count'}] : []),
+      {key: 'txYoy', header: 'Customer count YoY', sub: '% vs LY', help: `${HELP.txYoy} LY transactions are in the cell tooltip and in Show LY values.`, value: r => yoyPct(C(r).tx, C(r).txLY), render: r => <WithLY text={`LY ${fmt.int(C(r).txLY)} transactions`}><PctVar actual={C(r).tx} target={C(r).txLY} /></WithLY>, group: 'Customer count'},
+      {key: 'basket', header: 'Basket size TY', sub: 'items / transaction', help: HELP.basket, value: basket, render: r => fmt.dec2(basket(r)), group: 'Basket size'},
+      ...(opts.customerLY ? [{key: 'basketLY', header: 'Basket size LY', sub: 'items / transaction', help: HELP.basketLY, value: basketLY, render: (r: Row) => fmt.dec2(basketLY(r)), group: 'Basket size'}] : []),
+      {key: 'basketYoy', header: 'Basket size YoY', sub: '% vs LY', help: `${HELP.basketYoy} LY basket size is in the cell tooltip and in Show LY values.`, value: r => yoyPct(basket(r), basketLY(r)), render: r => <WithLY text={`LY ${fmt.dec2(basketLY(r))} items per transaction`}><PctVar actual={basket(r)} target={basketLY(r)} /></WithLY>, group: 'Basket size'},
+      {key: 'spt', header: 'Sales / transaction', help: HELP.spt, value: r => salesPerTx(C(r).sales, C(r).tx), render: r => fmt.money2(salesPerTx(C(r).sales, C(r).tx)), group: 'Per transaction & store'},
       {
         key: 'sqft',
         header: 'Sales / sq ft',
         sub: 'store level',
         help: HELP.sqft,
-        value: r => (r.dept ? null : ratio(r.r.store.storeSales, r.r.store.sqft)),
-        render: r => (r.dept ? <span className="na" title="Store-level measure: not calculated by department (D24)">—</span> : fmt.money2(ratio(r.r.store.storeSales, r.r.store.sqft))),
-        group: 'Store',
+        value: r => (r.dept ? null : ratio(r.data.r.store.storeSales, r.data.r.store.sqft)),
+        render: r => (r.dept ? <span className="na" title="Store-level measure: not calculated by department (D24)">—</span> : fmt.money2(ratio(r.data.r.store.storeSales, r.data.r.store.sqft))),
+        group: 'Per transaction & store',
       },
     ];
   if (group === 'labor')
     return [
       {key: 'hours', header: 'Hours TY', help: HELP.hours, value: r => A(r).hours, render: r => fmt.int(A(r).hours), group: 'Labor hours'},
       {key: 'hoursLY', header: 'Hours LY', help: HELP.hoursLY, value: r => ly(r, A(r).hoursLY), render: r => fmt.int(ly(r, A(r).hoursLY)), group: 'Labor hours'},
+      {key: 'hoursBud', header: 'Hours Budget', help: HELP.hoursBud, value: r => na(r, L(r).hoursBud), render: r => naCell(r, fmt.int(L(r).hoursBud)), group: 'Hours vs Budget'},
+      {key: 'hoursVarBud', header: 'Hours vs Budget', sub: 'hrs (%)', help: HELP.hoursVarBud, value: r => na(r, variance(L(r).hours, L(r).hoursBud)), render: r => naCell(r, <HoursVar actual={L(r).hours} target={L(r).hoursBud} />), group: 'Hours vs Budget'},
+      {key: 'hoursMdoc', header: 'Hours MDoc', help: HELP.hoursMdoc, value: r => na(r, L(r).hoursMdoc), render: r => naCell(r, fmt.int(L(r).hoursMdoc)), group: 'Hours vs MDoc (operational target)'},
+      {key: 'hoursVarMdoc', header: 'Hours vs MDoc', sub: 'hrs (%)', help: HELP.hoursVarMdoc, value: r => na(r, variance(L(r).hours, L(r).hoursMdoc)), render: r => naCell(r, <HoursVar actual={L(r).hours} target={L(r).hoursMdoc} />), group: 'Hours vs MDoc (operational target)'},
       {key: 'pay', header: 'Spend TY', help: HELP.pay, value: r => A(r).pay, render: r => fmt.money(A(r).pay), group: 'Labor spend'},
       {key: 'payLY', header: 'Spend LY', help: HELP.payLY, value: r => ly(r, A(r).payLY), render: r => fmt.money(ly(r, A(r).payLY)), group: 'Labor spend'},
       {key: 'payBud', header: 'Budgeted labor', help: HELP.payBud, value: r => na(r, L(r).payBud), render: r => naCell(r, fmt.money(L(r).payBud)), group: 'Labor spend'},
-      {key: 'payVar', header: 'Var % vs Budget', help: HELP.payVar, value: r => na(r, variancePct(L(r).pay, L(r).payBud)), render: r => (filtered(r) ? naCell(r, '') : <PctVar actual={L(r).pay} target={L(r).payBud} />), group: 'Labor spend'},
+      {key: 'payVar', header: 'Var % vs Budget', help: HELP.payVar, value: r => na(r, variancePct(L(r).pay, L(r).payBud)), render: r => naCell(r, <PctVar actual={L(r).pay} target={L(r).payBud} />), group: 'Labor spend'},
       {key: 'ahr', header: 'AHR actual', help: HELP.ahr, value: r => ahr(A(r).pay, A(r).hours), render: r => fmt.money2(ahr(A(r).pay, A(r).hours)), group: 'Average hourly rate'},
       {key: 'ahrBud', header: 'AHR budget', help: HELP.ahrBud, value: r => na(r, ahr(L(r).payBud, L(r).hoursBud)), render: r => naCell(r, fmt.money2(ahr(L(r).payBud, L(r).hoursBud))), group: 'Average hourly rate'},
     ];
   return [
     {key: 'iplh', header: 'IPLH', sub: 'Items per Labor Hour', help: HELP.iplh, value: r => na(r, iplh(L(r).items, L(r).hours)), render: r => naCell(r, fmt.dec1(iplh(L(r).items, L(r).hours)), NA_ATTRIBUTION), group: 'Productivity'},
-    {key: 'iplhMdoc', header: 'IPLH vs MDoc', help: HELP.iplhMdoc, value: r => na(r, variance(iplh(L(r).items, L(r).hours), iplh(L(r).itemsMdoc, L(r).hoursMdoc))), render: r => (filtered(r) ? naCell(r, '', NA_ATTRIBUTION) : <RatioVar actual={iplh(L(r).items, L(r).hours)} target={iplh(L(r).itemsMdoc, L(r).hoursMdoc)} />), group: 'Productivity'},
+    {key: 'iplhMdoc', header: 'IPLH vs MDoc', help: HELP.iplhMdoc, value: r => na(r, variance(iplh(L(r).items, L(r).hours), iplh(L(r).itemsMdoc, L(r).hoursMdoc))), render: r => naCell(r, <RatioVar actual={iplh(L(r).items, L(r).hours)} target={iplh(L(r).itemsMdoc, L(r).hoursMdoc)} />, NA_ATTRIBUTION), group: 'Productivity'},
     {key: 'rate', header: 'Labor rate', sub: '% of sales', help: HELP.rate, value: r => na(r, laborRate(L(r).pay, L(r).sales)), render: r => naCell(r, fmt.pct(laborRate(L(r).pay, L(r).sales), 2), NA_ATTRIBUTION), group: 'Productivity'},
-    {key: 'rateBud', header: 'Labor rate vs Budget', sub: 'pp', help: HELP.rateBud, value: r => na(r, ppDiff(laborRate(L(r).pay, L(r).sales), laborRate(L(r).payBud, L(r).salesBud))), render: r => (filtered(r) ? naCell(r, '', NA_ATTRIBUTION) : <RateVar actual={laborRate(L(r).pay, L(r).sales)} target={laborRate(L(r).payBud, L(r).salesBud)} />), group: 'Productivity'},
+    {key: 'rateBud', header: 'Labor rate vs Budget', sub: 'pp', help: HELP.rateBud, value: r => na(r, ppDiff(laborRate(L(r).pay, L(r).sales), laborRate(L(r).payBud, L(r).salesBud))), render: r => naCell(r, <RateVar actual={laborRate(L(r).pay, L(r).sales)} target={laborRate(L(r).payBud, L(r).salesBud)} />, NA_ATTRIBUTION), group: 'Productivity'},
     {key: 'otPay', header: 'Overtime $', help: HELP.otPay, value: r => (noOt(r) ? null : A(r).otPay), render: r => (noOt(r) ? <span className="na">Out of OT scope</span> : fmt.money(A(r).otPay)), group: 'Overtime (excl. Pharmacy)'},
     {key: 'otHours', header: 'Overtime hrs', help: HELP.otHours, value: r => (noOt(r) ? null : A(r).otHours), render: r => (noOt(r) ? <span className="na">—</span> : fmt.int(A(r).otHours)), group: 'Overtime (excl. Pharmacy)'},
     {key: 'otRate', header: 'Overtime rate', sub: '% of payroll $', help: HELP.otRate, value: r => (noOt(r) ? null : otRate(A(r).otPay, A(r).otBasePay)), render: r => (noOt(r) ? <span className="na">—</span> : fmt.pct(otRate(A(r).otPay, A(r).otBasePay), 2)), group: 'Overtime (excl. Pharmacy)'},
@@ -118,47 +149,58 @@ function columnsFor(group: Group, opts: {lyAvailable: boolean}): Column<Row>[] {
   ];
 }
 
+/** A YoY cell with its LY value in a hover title and as screen-reader text. */
+function WithLY({text, children}: {text: string; children: ReactNode}) {
+  return (
+    <span title={text}>
+      {children}
+      <span className="sr-only"> ({text})</span>
+    </span>
+  );
+}
+
 export default function AllocationPage() {
   const scope = useScope('allocation');
   const [group, setGroup] = useState<Group>('labor');
+  const [customerLY, setCustomerLY] = useState(false);
+  const [aivView, setAivView] = useState<'summary' | 'history'>('summary');
   const peopleActive = peopleFilterActive(scope.people);
 
-  const byStore = useMemo(() => rollup(scope.stores, scope.dept, scope.from, scope.to, 'store'), [scope]);
-  const byStoreDept = useMemo(() => rollup(scope.stores, scope.dept, scope.from, scope.to, 'storeDept'), [scope]);
+  const levels = useMemo(() => ({region: rollup(scope.stores, scope.dept, scope.from, scope.to, 'region'), district: rollup(scope.stores, scope.dept, scope.from, scope.to, 'district'), store: rollup(scope.stores, scope.dept, scope.from, scope.to, 'store'), storeDept: rollup(scope.stores, scope.dept, scope.from, scope.to, 'storeDept')}), [scope]);
   const t = useMemo(() => total(scope.stores, scope.dept, scope.from, scope.to), [scope]);
-  const pl = useMemo(() => (peopleActive ? laborForPeople(scope.stores, scope.dept, scope.from, scope.to, scope.people, 'store') : null), [scope, peopleActive]);
-  const plDept = useMemo(() => (peopleActive ? laborForPeople(scope.stores, scope.dept, scope.from, scope.to, scope.people, 'storeDept') : null), [scope, peopleActive]);
+  const pl = useMemo(() => {
+    if (!peopleActive) return null;
+    const by = (g: 'region' | 'district' | 'store' | 'storeDept') => laborForPeople(scope.stores, scope.dept, scope.from, scope.to, scope.people, g);
+    return {region: by('region'), district: by('district'), store: by('store'), storeDept: by('storeDept')};
+  }, [scope, peopleActive]);
   const plTotal = useMemo(() => (peopleActive ? laborForPeople(scope.stores, scope.dept, scope.from, scope.to, scope.people, 'none').totals.get('all') ?? null : null), [scope, peopleActive]);
-  const lyAvailable = pl?.lyAvailable ?? true;
+  const lyAvailable = pl?.store.lyAvailable ?? true;
 
-  const rows: Row[] = useMemo(
-    () =>
-      [...byStore.entries()].map(([id, r]) => {
-        const s = storeById.get(id)!;
-        const district = districtById.get(s.districtId)?.name ?? '';
-        return {id, name: s.name, district, search: `${s.name} ${s.number} ${district} ${regionById.get(s.regionId)?.name ?? ''} ${s.state} ${s.geography}`, dept: null, r, lp: pl ? (pl.totals.get(id) ?? null) : null, deptKey: scope.dept};
-      }),
-    [byStore, pl, scope.dept],
-  );
-  const children = useMemo(() => {
-    const out = new Map<string, Row[]>();
-    for (const store of rows) {
-      const list: Row[] = [];
-      for (const d of DEPARTMENTS) {
-        const key = `${store.id}|${d.id}`;
-        const r = byStoreDept.get(key);
-        if (!r || r.labor.rows === 0) continue;
-        list.push({id: key, name: d.name, district: '', search: d.name, dept: d.id, r, lp: plDept ? (plDept.totals.get(key) ?? null) : null, deptKey: d.id});
-      }
-      out.set(store.id, list);
-    }
-    return out;
-  }, [rows, byStoreDept, plDept]);
-  const tree = useMemo(() => ({children: (r: Row) => children.get(r.id) ?? [], levels: ['Store', 'Department'] as [string, string], name: (r: Row) => r.name}), [children]);
+  const rows: Row[] = useMemo(() => {
+    const at = (level: 'region' | 'district' | 'store', id: string) => {
+      const r = levels[level].get(id);
+      return r ? {r, lp: pl ? (pl[level].totals.get(id) ?? null) : null, deptKey: scope.dept} : undefined;
+    };
+    return buildOrgTree(scope.stores, {
+      region: id => at('region', id),
+      district: id => at('district', id),
+      store: id => at('store', id),
+      depts: sid =>
+        DEPARTMENTS.flatMap(d => {
+          const key = `${sid}|${d.id}`;
+          const r = levels.storeDept.get(key);
+          return r && r.labor.rows > 0 ? [{id: d.id, name: d.name, data: {r, lp: pl ? (pl.storeDept.totals.get(key) ?? null) : null, deptKey: d.id}}] : [];
+        }),
+    });
+  }, [levels, pl, scope.stores, scope.dept]);
+  const autoOpen = useMemo(() => onlyChildIds(rows), [rows]);
+  const tree = useMemo(() => ({children: (r: Row) => r.children, levels: ['Region', 'District', 'Store', 'Department'], name: (r: Row) => r.name, defaultOpen: (r: Row) => autoOpen.has(r.id)}), [autoOpen]);
+  const totalRow: Row = {id: 'total', level: 'region', name: 'Total', sub: '', search: '', dept: null, storeIds: [...scope.stores], data: {r: t, lp: plTotal, deptKey: scope.dept}, children: []};
+  const where = scopeLabel(scope.stores);
 
   const columns: Column<Row>[] = [
-    {key: 'name', header: 'Store / Department', value: r => r.name, render: r => (r.dept ? r.name : <>{r.name}<span className="cell-sub">{r.district}</span></>), align: 'left'},
-    ...columnsFor(group, {lyAvailable}),
+    {key: 'name', header: 'Region / District / Store / Department', value: r => r.name, render: r => (r.sub ? <>{r.name}<span className="cell-sub">{r.sub}</span></> : r.name), align: 'left'},
+    ...columnsFor(group, {lyAvailable, customerLY}),
   ];
 
   const A = plTotal ?? t.labor;
@@ -190,87 +232,136 @@ export default function AllocationPage() {
       ) : (
         <>
           <section className="kpi-grid five" aria-label="Allocation summary">
-            <KpiCard level="primary" label="Gross Sales TY" value={fmt.compactMoney(t.labor.sales)} hint={`Gross Sales (UC1 definition) of ${deptLabel(scope.dept)}. Not filtered by Position / Tenure.`} lines={[{label: 'Gross Sales LY', value: fmt.compactMoney(t.labor.salesLY)}, {label: 'YoY growth', value: `${fmt.signedCompactMoney(yoyChange(t.labor.sales, t.labor.salesLY))} (${fmt.signedPct(yoyPct(t.labor.sales, t.labor.salesLY))})`}]} />
-            <KpiCard level="primary" label="Labor hours TY" value={fmt.compactHours(A.hours)} lines={[{label: 'LY', value: peopleActive && !lyAvailable ? 'n/a' : fmt.compactHours(A.hoursLY)}, {label: 'vs LY', value: peopleActive && !lyAvailable ? 'n/a' : <PctVar actual={A.hours} target={A.hoursLY} />}]} />
+            <KpiCard
+              level="primary"
+              label="Gross Sales TY"
+              decisions={['D01']}
+              value={fmt.compactMoney(t.labor.sales)}
+              hint={`Gross Sales (UC1 definition) of ${deptLabel(scope.dept)}. Budget = Ops 100 Sales Budget (SO 1007 budget; synthetic values); whether Budget or MDoc is the UC5 sales reference is open (D01). LY = same fiscal weeks one year earlier: ${fmt.compactMoney(t.labor.salesLY)}, YoY ${fmt.signedCompactMoney(yoyChange(t.labor.sales, t.labor.salesLY))}. Not filtered by Position / Tenure.`}
+              lines={[{label: 'Budget', value: fmt.compactMoney(t.labor.salesBud)}, {label: 'vs Budget', value: <PctVar actual={t.labor.sales} target={t.labor.salesBud} />}, {label: 'vs LY', value: <PctVar actual={t.labor.sales} target={t.labor.salesLY} />}]}
+            />
+            <KpiCard
+              level="primary"
+              label="Labor hours TY"
+              decisions={['D01']}
+              value={fmt.compactHours(A.hours)}
+              hint={`Actual labor hours. Budget = budgeted hours (SO 1007). The MDoc operational target is a separate reference, shown in the table (Hours & spend). LY = same fiscal weeks one year earlier: ${peopleActive && !lyAvailable ? 'n/a' : fmt.compactHours(A.hoursLY)}.${peopleActive ? ' Budget shows n/a under Position / Tenure: budgets are set by store, department and period.' : ''}`}
+              lines={[{label: 'Budget', value: peopleActive ? 'n/a' : fmt.compactHours(t.labor.hoursBud)}, {label: 'vs Budget', value: peopleActive ? 'n/a' : <PctVar actual={t.labor.hours} target={t.labor.hoursBud} />}, {label: 'vs LY', value: peopleActive && !lyAvailable ? 'n/a' : <PctVar actual={A.hours} target={A.hoursLY} />}]}
+            />
             <KpiCard level="primary" label="Labor spend TY" decisions={['D01']} value={fmt.compactMoney(A.pay)} lines={[{label: 'Budgeted labor', value: peopleActive ? 'n/a' : fmt.compactMoney(t.labor.payBud)}, {label: 'vs Budget', value: peopleActive ? 'n/a' : <PctVar actual={t.labor.pay} target={t.labor.payBud} />}, {label: 'LY', value: peopleActive && !lyAvailable ? 'n/a' : fmt.compactMoney(A.payLY)}]} />
-            <KpiCard label="Items per Labor Hour (IPLH)" hint={`${HELP.iplh} MDoc (Master Doc) is the Ops 100 reference for IPLH; there are no budget items.`} value={peopleActive ? 'n/a' : fmt.dec1(iplh(t.labor.items, t.labor.hours))} lines={peopleActive ? [{label: 'Reason', value: 'Items not attributable to Position / Tenure'}] : [{label: 'vs MDoc', value: <RatioVar actual={iplh(t.labor.items, t.labor.hours)} target={iplh(t.labor.itemsMdoc, t.labor.hoursMdoc)} />}]} />
+            <KpiCard label="Items per Labor Hour (IPLH)" hint={`${HELP.iplh} Compared with MDoc (Master Doc), as in the OPS107 IPLH report. The Ops 100 model also holds Items Budget and IPLH Budget; the reference for UC5 is open (D01).`} value={peopleActive ? 'n/a' : fmt.dec1(iplh(t.labor.items, t.labor.hours))} lines={peopleActive ? [{label: 'Reason', value: 'Items not attributable to Position / Tenure'}] : [{label: 'vs MDoc', value: <RatioVar actual={iplh(t.labor.items, t.labor.hours)} target={iplh(t.labor.itemsMdoc, t.labor.hoursMdoc)} />}]} />
             <KpiCard label="Labor rate" hint={HELP.rate} value={peopleActive ? 'n/a' : fmt.pct(laborRate(t.labor.pay, t.labor.sales), 2)} decisions={['D19']} lines={peopleActive ? [{label: 'Reason', value: 'Sales not attributable to Position / Tenure'}] : [{label: 'vs Budget', value: <RateVar actual={laborRate(t.labor.pay, t.labor.sales)} target={laborRate(t.labor.payBud, t.labor.salesBud)} />}]} />
           </section>
 
           <VisualCard
-            title="Store labor allocation"
-            subtitle="One row per store. Select + to show its departments in the same table, with the same measures. Store rows are calculated from store totals, not by adding department rows."
+            title="Labor allocation by region, district, store and department"
+            subtitle="Starts at Region. Select + to show the districts, stores and departments below a row, with the same measures. Each row is calculated from its own totals, not by adding the rows below it."
             filters={
               <VisualFilters
                 scope={scope}
                 notes={[
-                  'Department rows follow the Department filter: with one department selected, each store shows only that department.',
-                  'Customer count, basket size and sales per transaction: store rows use store transactions; department rows use the transactions that include the department (Ops 100 department rows). Department transactions overlap, so they are never added up to the store.',
-                  'Rates, averages and ratios (AHR, IPLH, labor rate, overtime rate, AIV, basket size) are recalculated from the totals of each row, never summed or averaged across rows. Sales per square foot is store level.',
+                  'Region, District, Store, State and Geography filters limit the rows and the totals; a level left with a single row opens automatically. The Total row covers every store in scope.',
+                  'Department rows follow the Department filter: with one department selected, each store shows only that department, and region, district and store rows show that department\'s measures.',
+                  'Customer count, basket size and sales per transaction: region, district and store rows use store transactions (a transaction belongs to one store, so stores add up); department rows use the transactions that include the department (Ops 100 department rows). Department transactions overlap, so they are never added up to the store.',
+                  'Rates, averages and ratios (AHR, IPLH, labor rate, overtime rate, AIV, basket size, variance %) are recalculated from the totals of each row, never summed or averaged across rows. Sales per square foot is all-department store sales / store square feet, also for region and district rows, and is not shown on department rows.',
+                  'Budget and MDoc stay separate: Sales, Items, Hours and Spend are compared with the formal Budget (SO 1007); Hours are also compared with MDoc, the Ops operational target. Which reference UC5 treats as primary per KPI is open (D01).',
                   peopleNote,
                 ]}
               />
             }
-            actions={<Segmented label="Measure group" value={group} options={groupOptions} onChange={setGroup} size="sm" />}
+            actions={
+              <>
+                <Segmented label="Measure group" value={group} options={groupOptions} onChange={setGroup} size="sm" />
+                {group === 'sales' ? (
+                  <label className="check">
+                    <input type="checkbox" checked={customerLY} onChange={e => setCustomerLY(e.target.checked)} /> Show LY values (customers, basket)
+                  </label>
+                ) : null}
+              </>
+            }
           >
+            <p className="table-scope">
+              <b>Showing</b> {where}
+              {scope.dept !== ALL ? ` · ${deptLabel(scope.dept)} only` : ''} · Total row = all stores in scope{peopleActive ? ' (labor actuals of the Position / Tenure population)' : ''}
+            </p>
             <DataTable
               rows={rows}
               columns={columns}
               rowKey={r => r.id}
-              label="Store labor allocation"
+              label="Labor allocation by region, district, store and department"
               searchText={r => r.search}
-              searchPlaceholder="Search store, district or department…"
-              countNoun="stores"
+              searchPlaceholder="Search region, district, store or department…"
+              countNoun={rows.length === 1 ? 'region' : 'regions'}
               tree={tree}
-              initialSort={{key: group === 'sales' ? 'sales' : group === 'labor' ? 'pay' : 'otPay', dir: 'desc'}}
+              pinned={[totalRow]}
+              pinnedLabel={() => `Total · ${where}`}
               exportName={`store-ops-labor-allocation-${group}`}
               maxHeight={560}
             />
             {group === 'sales' ? (
               <p className="note">
-                Sales per square foot uses all departments for the selected time frame and is shown on store rows only. <DecisionChip ids={['D24']} label="Rule open" align="left" />
+                Sales per square foot uses all departments for the selected time frame and is not shown on department rows. Sales and Items Budget are synthetic values for the Ops 100 `Sales Budget` and `Items Budget` fields; the reference to use for UC5 is open. <DecisionChip ids={['D24', 'D01']} label="Open" align="left" />
               </p>
             ) : null}
           </VisualCard>
 
-          <VisualCard title="Average Item Value (AIV) & estimated inflation" subtitle="Price per item sold this year vs last year. Tracked separately: it does not adjust any labor metric." filters={<VisualFilters scope={scope} notes={['Gross sales and items of the stores, department and time frame in scope. Not filtered by Position / Tenure.']} />}>
-            <dl className="context-list cols-2">
-              <div>
-                <dt>
-                  AIV this year (TY) <InfoTip text="Average Item Value = Gross Sales TY / Items sold TY." label="About AIV this year" align="left" />
-                </dt>
-                <dd>{fmt.money2(aivTY)}</dd>
-              </div>
-              <div>
-                <dt>
-                  AIV last year (LY) <InfoTip text="Gross Sales LY / Items sold LY, for the same fiscal weeks one year earlier (364 days)." label="About AIV last year" align="left" />
-                </dt>
-                <dd>{fmt.money2(aivLY)}</dd>
-              </div>
-              <div>
-                <dt>
-                  AIV % change vs LY · estimated inflation <InfoTip text={`${HELP.inflation}`} label="About estimated inflation" align="left" />
-                </dt>
-                <dd>{fmt.signedPct(yoyPct(aivTY, aivLY))}</dd>
-              </div>
-              <div>
-                <dt>
-                  AIV change applied to items sold TY ($) <InfoTip text="(AIV TY − AIV LY) × Items sold TY. Ops 100 measure '$ Value vs LY (INF)': the part of the Gross Sales change explained by the change in average item value at this year's volume. It is an arithmetic split, not a proven inflation effect: product mix, promotions and weighed items also change AIV." label="About AIV change applied to items sold" align="left" />
-                </dt>
-                <dd>{fmt.signedCompactMoney(aivValue)}</dd>
-              </div>
-              <div>
-                <dt>
-                  Gross Sales growth vs LY (not inflation adjusted) <InfoTip text="Gross Sales TY − Gross Sales LY. It equals the AIV change applied to items sold TY plus the change in items sold valued at last year's AIV: (Items TY − Items LY) × AIV LY." label="About Gross Sales growth" align="left" />
-                </dt>
-                <dd>
-                  {fmt.signedCompactMoney(yoyChange(t.labor.sales, t.labor.salesLY))} <PctVar actual={t.labor.sales} target={t.labor.salesLY} />
-                </dd>
-              </div>
-            </dl>
-            <p className="note">
-              Confirmed: inflation does not adjust labor spend, hours, labor rate or IPLH. Open: whether this inflation estimate should be used when reporting sales growth; until then, sales growth is shown unadjusted. <DecisionChip ids={['D26']} label="Open" align="left" />
-            </p>
+          <VisualCard
+            title="Average Item Value (AIV) & estimated inflation"
+            subtitle={aivView === 'summary' ? 'Price per item sold this year vs last year. Tracked separately: it does not adjust any labor metric.' : 'Weekly history by department, as in the OPS111 Average Item Value report. One department or the aggregate at a time. It does not adjust any labor metric.'}
+            filters={
+              <VisualFilters
+                scope={scope}
+                notes={[
+                  'Gross sales and items of the stores, department and time frame in scope. Not filtered by Position / Tenure.',
+                  'History by department: rolling 52 weeks ending at the last week of the selected time frame (the start of the time frame does not apply); LW, PTD, QTD and YTD are anchored on the same week. Location filters and the Department filter apply.',
+                ]}
+              />
+            }
+            actions={<Segmented label="AIV view" value={aivView} options={[{id: 'summary', label: 'Summary'}, {id: 'history', label: 'History by department'}]} onChange={setAivView} size="sm" />}
+          >
+            {aivView === 'history' ? (
+              <AivHistory scope={scope} />
+            ) : (
+              <>
+                <dl className="context-list cols-2">
+                  <div>
+                    <dt>
+                      AIV this year (TY) <InfoTip text="Average Item Value = Gross Sales TY / Items sold TY." label="About AIV this year" align="left" />
+                    </dt>
+                    <dd>{fmt.money2(aivTY)}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      AIV last year (LY) <InfoTip text="Gross Sales LY / Items sold LY, for the same fiscal weeks one year earlier (364 days)." label="About AIV last year" align="left" />
+                    </dt>
+                    <dd>{fmt.money2(aivLY)}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      AIV % change vs LY · estimated inflation <InfoTip text={`${HELP.inflation}`} label="About estimated inflation" align="left" />
+                    </dt>
+                    <dd>{fmt.signedPct(yoyPct(aivTY, aivLY))}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      AIV change applied to items sold TY ($) <InfoTip text="(AIV TY − AIV LY) × Items sold TY. Ops 100 measure '$ Value vs LY (INF)': the part of the Gross Sales change explained by the change in average item value at this year's volume. It is an arithmetic split, not a proven inflation effect: product mix, promotions and weighed items also change AIV." label="About AIV change applied to items sold" align="left" />
+                    </dt>
+                    <dd>{fmt.signedCompactMoney(aivValue)}</dd>
+                  </div>
+                  <div>
+                    <dt>
+                      Gross Sales growth vs LY (not inflation adjusted) <InfoTip text="Gross Sales TY − Gross Sales LY. It equals the AIV change applied to items sold TY plus the change in items sold valued at last year's AIV: (Items TY − Items LY) × AIV LY." label="About Gross Sales growth" align="left" />
+                    </dt>
+                    <dd>
+                      {fmt.signedCompactMoney(yoyChange(t.labor.sales, t.labor.salesLY))} <PctVar actual={t.labor.sales} target={t.labor.salesLY} />
+                    </dd>
+                  </div>
+                </dl>
+                <p className="note">
+                  Confirmed: inflation does not adjust labor spend, hours, labor rate or IPLH. Open: whether this inflation estimate should be used when reporting sales growth; until then, sales growth is shown unadjusted. <DecisionChip ids={['D26']} label="Open" align="left" />
+                </p>
+              </>
+            )}
           </VisualCard>
         </>
       )}

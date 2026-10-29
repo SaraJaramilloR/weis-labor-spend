@@ -143,12 +143,16 @@ export function tenureBand(hire: number, at: number): TenureBand {
   return '10+ years';
 }
 
-/** Attendance incident types listed in the workbook (R41). Their calculation is still to be confirmed (D22). */
-export const INCIDENT_TYPES = ['Late In > 15 min', 'More than half shift unworked', 'Absent Unpaid Timecard', 'Absent Unpaid Exception', 'No Call No Show Timecard', 'Sick Unpaid Timecard'] as const;
+/** Attendance incident types, named exactly as listed in workbook R41 ("listed as a core KPI by James"; attendance
+ *  comes from UKG, technical session). R41 names no source report or reconciliation target. No OPS report in the reference folder carries attendance categories. R41 also lists "Worked Shift -
+ *  Daily Total" and "Scheduled Hours - Daily Total", which are totals, not incidents (possible rate denominators), so
+ *  they are not counted. Early departures are not listed in any supplied source and are not modeled. The calculation
+ *  is still to be confirmed (D22). */
+export const INCIDENT_TYPES = ['Late In >15', 'More than half shift unworked', 'Absent Unpaid Timecard', 'Absent Unpaid Exception', 'No Call No Show Timecard', 'Sick Unpaid Timecard'] as const;
 export type IncidentType = (typeof INCIDENT_TYPES)[number];
-/** Illustrative incident probability per associate per active week. */
+/** Illustrative incident probability per associate per active week. Synthetic: no Weis rate is used. */
 const INCIDENT_RATE: Record<IncidentType, number> = {
-  'Late In > 15 min': 0.07,
+  'Late In >15': 0.07,
   'More than half shift unworked': 0.009,
   'Absent Unpaid Timecard': 0.018,
   'Absent Unpaid Exception': 0.008,

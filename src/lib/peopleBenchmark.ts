@@ -7,7 +7,7 @@ import {storeById} from '../data/org';
 import {benchmarkValue, perStoreAverage} from './benchmark';
 import type {BenchmarkMethod} from './filters';
 import {retentionRate, turnoverRate} from './metrics';
-import {emptyPeople, periodsIn, type PeopleTotals} from './peopleMetrics';
+import {emptyPeople, peopleRollup, periodsIn, type PeopleFilter, type PeopleTotals} from './peopleMetrics';
 
 export const turnoverOf = (p: PeopleTotals) => turnoverRate(p.terms, p.begin, p.end);
 export const retentionOf = (p: PeopleTotals) => retentionRate(p.begin, p.termsOfBeginning);
@@ -69,4 +69,47 @@ export function trendBuckets(from: number, to: number): {unit: 'period' | 'week'
   const buckets: TrendBucket[] = [];
   for (let i = from; i <= to; i++) buckets.push({key: String(i), label: `W${String(WEEKS[i].week).padStart(2, '0')} FY${String(WEEKS[i].fy).slice(2)}`, from: i, to: i, partial: false});
   return {unit: 'week', buckets};
+}
+
+/** True when two store sets hold the same stores. */
+export function sameStores(a: Iterable<string>, b: Iterable<string>): boolean {
+  const x = new Set(a);
+  const y = new Set(b);
+  return x.size === y.size && [...x].every(id => y.has(id));
+}
+
+/** The one region of a set of stores, or null when it spans several regions (or is empty). */
+export function singleRegion(ids: Iterable<string>): string | null {
+  const regions = new Set([...ids].map(id => storeById.get(id)?.regionId));
+  return regions.size === 1 ? ([...regions][0] ?? null) : null;
+}
+
+/** People totals of a set of stores: counts and snapshots added store by store (each associate belongs to one store,
+ *  so no one is counted twice in a snapshot); rates are recalculated from these components, never averaged. */
+export const totalsOf = (byStore: Map<string, PeopleTotals>, ids: Iterable<string>) => sumPeople([...ids].map(id => byStore.get(id) ?? emptyPeople()));
+
+/**
+ * Which benchmark series are meaningful next to a scope of stores (no duplicates):
+ * - region: only when the scope lies in one region and is not that region's whole benchmark population;
+ * - chain: only when the scope is not the whole chain benchmark population.
+ */
+export function referenceSeries(scopeIds: Iterable<string>, chain: Set<string>): {regionId: string | null; showChain: boolean} {
+  const ids = [...scopeIds];
+  const r = singleRegion(ids);
+  const regionPop = r ? [...chain].filter(id => storeById.get(id)?.regionId === r) : [];
+  return {regionId: r && !sameStores(ids, regionPop) ? r : null, showChain: !sameStores(ids, chain)};
+}
+
+export type TrendPoint = {key: string; label: string; partial: boolean; scope: PeopleTotals; stores: number; region: Benchmark | null; chain: Benchmark};
+
+/** One point per time bucket: the selected scope's totals (counts, snapshots and the components of its rates) and the
+ *  benchmarks of the same bucket, computed on the benchmark population with the documented rules (D13). */
+export function scopeTrend(scopeIds: Set<string>, chain: Set<string>, f: PeopleFilter, buckets: TrendBucket[], method: BenchmarkMethod, regionId: string | null): TrendPoint[] {
+  const population = new Set([...chain, ...scopeIds]);
+  return buckets.map(b => {
+    const byStore = peopleRollup(population, f, b.from, b.to, 'store');
+    const chainMap = new Map([...chain].map(id => [id, byStore.get(id) ?? emptyPeople()]));
+    const bm = benchmarks(chainMap, method);
+    return {key: b.key, label: b.label, partial: b.partial, scope: totalsOf(byStore, scopeIds), stores: scopeIds.size, region: regionId ? (bm.region.get(regionId) ?? null) : null, chain: bm.chain};
+  });
 }

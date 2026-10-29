@@ -19,6 +19,8 @@ export type LaborFact = {
   salesBud: number;
   items: number;
   itemsLY: number;
+  /** Budget items (Ops 100 Warehouse `Items Budget`): Budget sales / a budgeted average item value. */
+  itemsBud: number;
   itemsMdoc: number;
   pay: number;
   payLY: number;
@@ -138,6 +140,8 @@ function generate() {
     const rnd = mulberry32(hashSeed(`${SEED}-${store.id}`));
     const profiles = storeProfiles(store, rnd);
     STORE_DEPT_BASE.set(store.id, profiles.map(p => ({dept: p.dept.id, hours: p.payBase / p.dept.ahr, ftShare: p.ft})));
+    // Budgeted average item value per department; its own seed, so adding Items Budget leaves every other figure unchanged.
+    const budAiv = profiles.map(p => 1 + noise(mulberry32(hashSeed(`items-bud-${store.id}-${p.dept.id}`)), 0.012));
     const growth = noise(rnd, 0.018);
   const storeTarget = noise(rnd, 0.015);
     const basket = between(rnd, 8.2, 9.8);
@@ -204,6 +208,7 @@ function generate() {
           salesBud: r2(salesBud),
           items: Math.round(a.items),
           itemsLY: Math.round(ly.items),
+          itemsBud: Math.round(salesBud / (p.dept.aiv * aivTrend * budAiv[k])),
           itemsMdoc: Math.round((expectedSales / (p.dept.aiv * aivTrend)) * (1 + p.mdocItems)),
           pay: r2(a.pay),
           payLY: r2(ly.pay),

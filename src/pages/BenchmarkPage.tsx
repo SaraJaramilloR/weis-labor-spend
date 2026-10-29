@@ -1,81 +1,112 @@
 // Workbook view R64 "Turnover & Retention Benchmark" (User Story 3): turnover rate, retention rate, terminations,
 // hires and beginning / ending headcount by store over time, with chain-wide and region-wide averages.
 //
-// Store values, region benchmarks and chain benchmarks are kept apart. Benchmarks use the documented rules
-// (lib/peopleBenchmark.ts, D13 open): rates weighted by default, counts as averages per store; population = chain
-// (or the store's own region), ignoring location filters and table search (assumption, D13).
-// The Store control selects the store for the trend charts; the ranking and the table list the stores of the
-// Region / District selection, so selecting a store never reduces them to one row.
+// Layout (Sara's approved extension of the hierarchy pattern the client asked for in Allocation, review 17:45–19:08):
+// a Chain → Region → District → Store matrix, then five trends for one analysis scope (the filtered scope by default,
+// or the row whose name is selected), then an optional store ranking. Expanding a row never selects it.
+//
+// Actual values and benchmarks are kept apart. Row values are the row's own totals: event counts, snapshots added store
+// by store at the same date, and rates recalculated from those components. Benchmarks use the documented rules
+// (lib/peopleBenchmark.ts, D13 open): rates weighted by default, counts as averages per store; population = chain (or a
+// region within it), ignoring location filters and table search (assumption, D13). The global Store filter limits the
+// page like any other location filter.
 import {useMemo, useState, type ReactNode} from 'react';
 import {Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import {pageById} from '../app/pages';
 import {useReport} from '../app/state';
-import {locationText, useScope, type Scope} from '../app/useScope';
+import {useScope, type Scope} from '../app/useScope';
 import {DataTable, type Column} from '../components/DataTable';
 import {ScopeLine, VisualFilters} from '../components/scope';
 import {DecisionChip, EmptyState, InfoTip, PageHeading, Segmented} from '../components/ui';
 import {VisualCard} from '../components/VisualCard';
-import {regionById, storeById} from '../data/org';
-import {ALL, storeScope} from '../lib/filters';
+import {regionById} from '../data/org';
 import {fmt} from '../lib/format';
-import {ppDiff} from '../lib/metrics';
-import {benchmarks, retentionOf, trendBuckets, turnoverOf, type Benchmark} from '../lib/peopleBenchmark';
+import {ppDiff, ratio} from '../lib/metrics';
+import {buildOrgTree, onlyChildIds, scopeLabel, type OrgNode} from '../lib/orgTree';
+import {benchmarks, referenceSeries, retentionOf, sameStores, scopeTrend, singleRegion, totalsOf, trendBuckets, turnoverOf, type Benchmark} from '../lib/peopleBenchmark';
 import {emptyPeople, peopleRollup, type PeopleTotals} from '../lib/peopleMetrics';
+import type {TreeRow} from '../lib/tableRows';
 import {ANIMATE, AXIS, C, ChartKey, TipBox} from '../visuals/chartTheme';
 
 const META = pageById.get('benchmark')!;
 const RANK_LIMIT = 10;
-const PAGE_SIZE = 20;
-/** Series styling shared by the five trend charts: store dark solid, region blue-grey solid, chain grey dashed. */
-const S = {store: C.actual, region: '#4f7a96', chain: C.benchmark} as const;
+/** Series styling shared by the trend charts: selected scope dark solid, region blue-grey solid, chain grey dashed. */
+const S = {scope: C.actual, region: '#4f7a96', chain: C.benchmark} as const;
 const PP = 'pp (percentage points): the arithmetic difference between two percentages, not a relative percentage change.';
 
-type Row = {id: string; name: string; number: number; regionId: string; region: string; p: PeopleTotals; turnover: number | null; retention: number | null};
+type Level = 'chain' | 'region' | 'district' | 'store';
+/** One matrix row: the filtered chain scope, a region, a district or a store, with its own people totals. */
+type Row = {id: string; level: Level; name: string; sub: string; search: string; ancestors: {id: string; name: string}[]; storeIds: string[]; p: PeopleTotals; children: Row[]};
 type TableGroup = 'movements' | 'turnover' | 'retention';
-type HcBench = 'region' | 'chain';
+type Kpi = 'turnover' | 'retention';
 
-const diffHelp = (kpi: 'turnover' | 'retention', vs: 'Region' | 'Chain') =>
-  kpi === 'turnover'
-    ? `Store turnover rate minus the ${vs === 'Region' ? "store's region" : 'chain'} turnover rate, in percentage points (pp). A positive value means higher turnover than the ${vs.toLowerCase()} benchmark. Example: 7.5% − 3.7% = +3.8 percentage points. ${PP}`
-    : `Store retention rate minus the ${vs === 'Region' ? "store's region" : 'chain'} retention rate, in percentage points (pp). A positive value means higher retention than the ${vs.toLowerCase()} benchmark. Example: 97.5% − 93.7% = +3.8 percentage points. ${PP}`;
+const LEVEL_NAME: Record<Level, string> = {chain: 'Chain', region: 'Region', district: 'District', store: 'Store'};
+const NA_SPANS = 'This row spans several regions, so it has no single region benchmark.';
+const NA_IS_REGION = 'This row is the whole benchmark population of its region: compare it with the chain.';
+const NA_IS_CHAIN = 'This row is the whole chain benchmark population, so a difference vs Chain is not meaningful.';
+
+const diffHelp = (kpi: Kpi, vs: 'Region' | 'Chain') =>
+  `Row ${kpi} rate minus the ${vs === 'Region' ? "row's region" : 'chain'} ${kpi} benchmark, in percentage points (pp). A positive value means higher ${kpi} than the ${vs.toLowerCase()} benchmark. Example: ${kpi === 'turnover' ? '7.5% − 3.7%' : '97.5% − 93.7%'} = +3.8 percentage points. ${PP} n/a: ${vs === 'Region' ? `${NA_SPANS} Or: ${NA_IS_REGION}` : NA_IS_CHAIN}`;
 
 export default function BenchmarkPage() {
   const scope = useScope('benchmark');
-  const {filters, role, update} = useReport();
+  const {filters} = useReport();
   const method = filters.benchmark;
   const methodLabel = method === 'weighted' ? 'weighted' : 'simple store average';
   const [group, setGroup] = useState<TableGroup>('turnover');
-  const [hcBench, setHcBench] = useState<HcBench>('region');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Store list (ranking and table): Region / District / State / Geography, not the trend store.
-  const listStores = useMemo(() => storeScope({...scope.filters, store: ALL}, role, scope.from), [scope, role]);
-  const selectedId = filters.store !== ALL && scope.chain.has(filters.store) ? filters.store : null;
-  const selected = selectedId ? storeById.get(selectedId)! : null;
-  const select = (id: string | null) => update({store: id ?? ALL});
-  const toggle = (id: string) => select(selectedId === id ? null : id);
-
-  // Per-store totals of the benchmark population for the selected time frame.
-  const byStore = useMemo(() => peopleRollup(scope.chain, scope.people, scope.from, scope.to, 'store'), [scope]);
+  // Per-store totals for the selected time frame: stores in scope and the benchmark population.
+  const byStore = useMemo(() => peopleRollup(new Set([...scope.chain, ...scope.stores]), scope.people, scope.from, scope.to, 'store'), [scope]);
   const bench = useMemo(() => benchmarks(new Map([...scope.chain].map(id => [id, byStore.get(id) ?? emptyPeople()])), method), [byStore, scope.chain, method]);
-  const rows: Row[] = useMemo(
-    () =>
-      [...listStores].map(id => {
-        const s = storeById.get(id)!;
-        const p = byStore.get(id) ?? emptyPeople();
-        return {id, name: s.name, number: s.number, regionId: s.regionId, region: regionById.get(s.regionId)?.name ?? '', p, turnover: turnoverOf(p), retention: retentionOf(p)};
-      }),
-    [listStores, byStore],
-  );
-  const regionsInList = [...new Set(rows.map(r => r.regionId))];
-  const uniqueRegion = regionsInList.length === 1 ? regionsInList[0] : null;
-  const regionOf = (regionId: string) => bench.region.get(regionId) ?? null;
+  const unfiltered = sameStores(scope.stores, scope.chain);
+  const chainName = unfiltered ? 'Chain' : 'Filtered scope';
 
-  const listScope: Scope = {
-    ...scope,
-    stores: listStores,
-    applied: scope.applied.map(a => (a.startsWith('Store: ') ? locationText({...filters, store: ALL}) : a)).concat(selected ? [`Trend store: ${selected.name}`] : []),
+  const {chainRow, rowsById, autoOpen} = useMemo(() => {
+    const org = buildOrgTree(scope.stores, {region: id => id, district: id => id, store: id => id});
+    const map = (n: OrgNode<string>, ancestors: Row['ancestors']): Row => ({
+      id: n.id,
+      level: n.level as Level,
+      name: n.name,
+      sub: n.sub,
+      search: n.search,
+      ancestors,
+      storeIds: n.storeIds,
+      p: totalsOf(byStore, n.storeIds),
+      children: n.children.map(c => map(c, [...ancestors, {id: n.id, name: n.name}])),
+    });
+    const ids = [...scope.stores];
+    const chain: Row = {id: 'chain', level: 'chain', name: chainName, sub: unfiltered ? `${ids.length} stores` : scopeLabel(scope.stores), search: chainName, ancestors: [], storeIds: ids, p: totalsOf(byStore, ids), children: []};
+    chain.children = org.map(n => map(n, [{id: 'chain', name: chainName}]));
+    const all = new Map<string, Row>();
+    const walk = (r: Row) => (all.set(r.id, r), r.children.forEach(walk));
+    walk(chain);
+    return {chainRow: chain, rowsById: all, autoOpen: onlyChildIds(org)};
+  }, [scope.stores, byStore, chainName, unfiltered]);
+
+  // A selection the filters no longer include falls back to the filtered scope.
+  if (selectedId !== null && !rowsById.has(selectedId)) setSelectedId(null);
+  const selRow = (selectedId && rowsById.get(selectedId)) || chainRow;
+  const selAncestors = new Set(selRow.ancestors.map(a => a.id));
+  const scopeTitle = selRow.level === 'chain' ? (unfiltered ? 'Chain' : `Filtered selection: ${scopeLabel(scope.stores).replace(/ · \d+ stores?$/, '')}`) : [...selRow.ancestors.slice(1).map(a => a.name), selRow.name].join(' › ');
+  const select = (r: Row) => setSelectedId(r.level === 'chain' || r.id === selectedId ? null : r.id);
+
+  const refFor = (r: Row) => referenceSeries(r.storeIds, scope.chain);
+  const regionBench = (r: Row): {b: Benchmark | null; why: string} => {
+    const ref = refFor(r);
+    if (ref.regionId) return {b: bench.region.get(ref.regionId) ?? null, why: ''};
+    return {b: null, why: singleRegion(r.storeIds) ? NA_IS_REGION : NA_SPANS};
   };
-  const benchNote = `Benchmarks: chain = all stores in the benchmark population; region = the stores of each store's own region. They ignore Region / District / Store filters and the table search, and keep the time frame and people filters (assumption, D13). Rates: ${methodLabel}; counts: average per store.`;
+
+  const benchNote = `Benchmarks: chain = all stores in the benchmark population; region = the stores of the row's region. They ignore Region / District / Store filters and the table search, and keep the time frame and people filters (assumption, D13). Rates: ${methodLabel}; counts: average per store.`;
+  const treeOptions = {
+    children: (r: Row) => r.children,
+    levels: ['Chain', 'Region', 'District', 'Store'],
+    name: (r: Row) => r.name,
+    defaultOpen: (r: Row) => r.level === 'chain' || autoOpen.has(r.id) || selAncestors.has(r.id),
+    path: (r: Row) => r.ancestors.map(a => a.name).join(' › '),
+  };
+  const countStores = (nodes: TreeRow<Row>[]): number => nodes.reduce((n, t) => n + (t.row.level === 'store' ? 1 : countStores(t.children)), 0);
 
   return (
     <div className="page">
@@ -84,36 +115,35 @@ export default function BenchmarkPage() {
         <span className="heading-value">{method === 'weighted' ? 'Weighted (chain totals)' : 'Simple store average · exploratory'}</span>
         <DecisionChip ids={['D13', 'D28']} label="Benchmark rule open" />
       </PageHeading>
-      <ScopeLine scope={listScope} />
-      {rows.length === 0 ? (
+      <ScopeLine scope={scope} />
+      {scope.stores.size === 0 ? (
         <EmptyState>No stores in this selection. Use Reset filters.</EmptyState>
       ) : (
         <>
           <div className="selection-bar" role="status">
-            {selected ? (
-              <>
-                <span>
-                  <b>Trend store: {selected.name}</b> · {regionById.get(selected.regionId)?.name}. The five trend charts show this store with its region and the chain.
-                </span>
-                <button type="button" className="btn-secondary" onClick={() => select(null)}>
-                  Clear store selection
-                </button>
-              </>
-            ) : (
-              <span>No store selected. Select a store in the Store filter, the ranking or the table to see its trends.</span>
-            )}
+            <span>
+              <b>Analysis scope: {scopeTitle}</b> · {selRow.storeIds.length} {selRow.storeIds.length === 1 ? 'store' : 'stores'} ·{' '}
+              {selRow.level === 'chain' ? 'the scope set by the filters. Select a row name in the table to analyze a region, district or store.' : `selected in the table (${LEVEL_NAME[selRow.level].toLowerCase()}), within the filters.`}
+            </span>
+            <button type="button" className="btn-secondary" onClick={() => setSelectedId(null)} disabled={selRow.level === 'chain'}>
+              Reset to filtered scope
+            </button>
           </div>
-
-          <BenchmarkSummary selected={selected ? {name: selected.name, p: byStore.get(selected.id) ?? emptyPeople()} : null} regionId={selected?.regionId ?? uniqueRegion} region={regionOf(selected?.regionId ?? uniqueRegion ?? '')} chain={bench.chain} methodLabel={methodLabel} />
-
-          <Ranking rows={rows} selectedId={selectedId} onSelect={toggle} chain={bench.chain.turnover} uniqueRegion={uniqueRegion} regionOf={regionOf} scope={listScope} benchNote={benchNote} />
-
-          <TrendSection scope={scope} selectedId={selectedId} method={method} hcBench={hcBench} setHcBench={setHcBench} benchNote={benchNote} />
+          <BenchmarkReference chain={bench.chain} regionId={refFor(selRow).regionId} region={refFor(selRow).regionId ? (bench.region.get(refFor(selRow).regionId!) ?? null) : null} methodLabel={methodLabel} />
 
           <VisualCard
-            title="Store People Metrics & Benchmarks"
-            subtitle="One row per store in the Region / District selection. Region values refer to each store's own region. Select a store name to show its trends."
-            filters={<VisualFilters scope={listScope} notes={[benchNote, 'Search filters the listed stores only; it does not change the benchmarks. Export includes every matching store for the selected column group.']} />}
+            title="People Metrics & Benchmarks by Chain, Region, District and Store"
+            subtitle="Select + to show the regions, districts and stores below a row; select a row name to analyze it in the trends below. Each row shows its own totals; benchmark columns compare it with its region and the chain."
+            filters={
+              <VisualFilters
+                scope={scope}
+                notes={[
+                  benchNote,
+                  'Row values: hires and terminations are event counts of the row; beginning and ending headcount are snapshots of the row, adding its stores at the same date (each associate belongs to one store); turnover and retention are recalculated from those components, never averaged across rows.',
+                  'Search keeps the region and district of matching rows. Export writes the visible rows with their level and parent path.',
+                ]}
+              />
+            }
             actions={
               <Segmented
                 label="Column group"
@@ -129,217 +159,182 @@ export default function BenchmarkPage() {
             }
           >
             <DataTable
-              rows={rows}
-              columns={tableColumns(group, bench.chain, regionOf)}
+              rows={[chainRow]}
+              columns={tableColumns(group, bench, regionBench, refFor)}
               rowKey={r => r.id}
-              label="Store People Metrics & Benchmarks"
-              searchText={r => `${r.name} ${r.number}`}
-              searchPlaceholder="Search store number or name"
-              countNoun="stores"
-              onRowClick={r => toggle(r.id)}
-              selectedKey={selectedId}
-              initialSort={{key: 'name', dir: 'asc'}}
-              exportName={`store-people-metrics-${group}`}
-              pageSize={PAGE_SIZE}
-              maxHeight={620}
+              label="People metrics and benchmarks by chain, region, district and store"
+              searchText={r => r.search}
+              searchPlaceholder="Search region, district or store"
+              tree={treeOptions}
+              countLabel={v => `${countStores(v)} of ${scope.stores.size} stores`}
+              onRowClick={select}
+              selectedKey={selRow.id}
+              exportName={`people-metrics-${group}`}
+              stickyFirst
+              maxHeight={560}
             />
           </VisualCard>
+
+          <TrendSection scope={scope} row={selRow} scopeTitle={scopeTitle} method={method} benchNote={benchNote} />
+
+          <details className="bench-ranking">
+            <summary>Store ranking by turnover rate (optional)</summary>
+            <Ranking stores={[...rowsById.values()].filter(r => r.level === 'store')} selectedId={selRow.level === 'store' ? selRow.id : null} onSelect={id => select(rowsById.get(id)!)} chain={bench.chain.turnover} regionOf={id => bench.region.get(id) ?? null} uniqueRegion={singleRegion(scope.stores)} scope={scope} benchNote={benchNote} />
+          </details>
         </>
       )}
     </div>
   );
 }
 
-function tableColumns(group: TableGroup, chain: Benchmark, regionOf: (id: string) => Benchmark | null): Column<Row>[] {
-  const base: Column<Row>[] = [
-    {key: 'name', header: 'Store', value: r => r.name, align: 'left'},
-    {key: 'region', header: 'Region', value: r => r.region, align: 'left'},
-  ];
-  if (group === 'movements')
+/** Count cell with the row's average per store and the benchmark averages per store in its hover title. */
+function CountCell({value, stores, region, chain, label}: {value: number; stores: number; region: number | null; chain: number | null; label: string}) {
+  const perStore = ratio(value, stores);
+  const title = `${label}: ${fmt.int(value)} for ${stores} ${stores === 1 ? 'store' : 'stores'} (${fmt.dec1(perStore)} per store). Benchmarks, average per store: ${region !== null ? `region ${fmt.dec1(region)}, ` : ''}chain ${fmt.dec1(chain)}.`;
+  return <span title={title}>{fmt.int(value)}</span>;
+}
+
+function tableColumns(group: TableGroup, bench: {chain: Benchmark; region: Map<string, Benchmark>}, regionBench: (r: Row) => {b: Benchmark | null; why: string}, refFor: (r: Row) => {regionId: string | null; showChain: boolean}): Column<Row>[] {
+  const nameCol: Column<Row> = {key: 'name', header: 'Chain › Region › District › Store', value: r => r.name, render: r => <>{r.name}<span className="cell-sub">{r.sub}</span></>, align: 'left'};
+  if (group === 'movements') {
+    const count = (k: 'begin' | 'end' | 'hires' | 'terms', label: string) => (r: Row) => <CountCell value={r.p[k]} stores={r.storeIds.length} region={regionBench(r).b?.[k] ?? null} chain={bench.chain[k]} label={label} />;
+    const g = 'Headcount & movements · row totals';
     return [
-      ...base,
-      {key: 'begin', header: 'Beginning Headcount', help: 'Active associates the day before the time frame starts (snapshot).', value: r => r.p.begin, render: r => fmt.int(r.p.begin), group: 'Headcount & movements'},
-      {key: 'end', header: 'Ending Headcount', help: 'Active associates on the last day of the time frame (snapshot). Ending = Beginning + Hires − Terminations for the same population.', value: r => r.p.end, render: r => fmt.int(r.p.end), group: 'Headcount & movements'},
-      {key: 'hires', header: 'Hires', help: 'Count of associates hired in the time frame.', value: r => r.p.hires, render: r => fmt.int(r.p.hires), group: 'Headcount & movements'},
-      {key: 'terms', header: 'Terminations', help: 'Count of associates whose employment ended in the time frame.', value: r => r.p.terms, render: r => fmt.int(r.p.terms), group: 'Headcount & movements'},
+      nameCol,
+      {key: 'stores', header: 'Stores', help: 'Stores in the row, within the filters.', value: r => r.storeIds.length, render: r => fmt.int(r.storeIds.length), group: g},
+      {key: 'begin', header: 'Beginning Headcount', help: 'Active associates of the row the day before the time frame starts (snapshot; stores added at the same date, never summed across weeks). Hover a value for its average per store and the benchmark averages per store.', value: r => r.p.begin, render: count('begin', 'Beginning headcount'), group: g},
+      {key: 'end', header: 'Ending Headcount', help: 'Active associates of the row on the last day of the time frame (snapshot). Ending = Beginning + Hires − Terminations for the same population.', value: r => r.p.end, render: count('end', 'Ending headcount'), group: g},
+      {key: 'hires', header: 'Hires', help: 'Count of associates hired in the time frame in the row (events). Hover for the average per store and the benchmarks.', value: r => r.p.hires, render: count('hires', 'Hires'), group: g},
+      {key: 'terms', header: 'Terminations', help: 'Count of associates whose employment ended in the time frame in the row (events). Hover for the average per store and the benchmarks.', value: r => r.p.terms, render: count('terms', 'Terminations'), group: g},
     ];
-  const kpi = group;
+  }
+  const kpi: Kpi = group;
   const name = kpi === 'turnover' ? 'Turnover' : 'Retention';
-  const store = (r: Row) => (kpi === 'turnover' ? r.turnover : r.retention);
-  const region = (r: Row) => regionOf(r.regionId)?.[kpi] ?? null;
+  const own = (r: Row) => (kpi === 'turnover' ? turnoverOf(r.p) : retentionOf(r.p));
+  const reg = (r: Row) => regionBench(r).b?.[kpi] ?? null;
+  const chainV = bench.chain[kpi];
+  const na = (why: string) => (
+    <span className="na" title={why}>
+      n/a<span className="sr-only"> ({why})</span>
+    </span>
+  );
   const g = `${name} rate`;
   return [
-    ...base,
-    {key: `store-${kpi}`, header: `Store ${name} (%)`, help: kpi === 'turnover' ? 'Terminations / average headcount ((beginning + ending) / 2) for the store in the time frame. Not annualized. Draft until OPS 201 is reviewed (D12).' : '(Beginning headcount − terminations of those associates) / beginning headcount for the store. Workbook draft (D27).', value: store, render: r => fmt.pct(store(r)), group: g},
-    {key: `region-${kpi}`, header: `Region ${name} (%)`, help: `${name} rate of the store's own region (benchmark; rule open, D13).`, value: region, render: r => fmt.pct(region(r)), group: g},
-    {key: `chain-${kpi}`, header: `Chain ${name} (%)`, help: `${name} rate of the chain (benchmark; rule open, D13). Same value on every row.`, value: () => chain[kpi], render: () => fmt.pct(chain[kpi]), group: g},
-    {key: `diffRegion-${kpi}`, header: 'Difference vs Region (pp)', help: diffHelp(kpi, 'Region'), value: r => ppDiff(store(r), region(r)), render: r => fmt.pp(ppDiff(store(r), region(r)), 1), group: g},
-    {key: `diffChain-${kpi}`, header: 'Difference vs Chain (pp)', help: diffHelp(kpi, 'Chain'), value: r => ppDiff(store(r), chain[kpi]), render: r => fmt.pp(ppDiff(store(r), chain[kpi]), 1), group: g},
+    nameCol,
+    {key: `own-${kpi}`, header: `${name} (%)`, help: kpi === 'turnover' ? "The row's terminations / its average headcount ((beginning + ending) / 2) in the time frame, recalculated from the row's totals. Not annualized. Draft until OPS 201 is reviewed (D12)." : "(The row's beginning headcount − terminations of those associates) / its beginning headcount, recalculated from the row's totals. Cohort-based draft; not 1 − turnover (D27).", value: own, render: r => fmt.pct(own(r)), group: g},
+    {key: `region-${kpi}`, header: `Region ${name} (%)`, help: `${name} benchmark of the row's region (rule open, D13). n/a: ${NA_SPANS} Or: ${NA_IS_REGION}`, value: reg, render: r => (regionBench(r).b ? fmt.pct(reg(r)) : na(regionBench(r).why)), group: g},
+    {key: `chain-${kpi}`, header: `Chain ${name} (%)`, help: `${name} benchmark of the chain (rule open, D13). Same value on every row.`, value: () => chainV, render: () => fmt.pct(chainV), group: g},
+    {key: `diffRegion-${kpi}`, header: 'Difference vs Region (pp)', help: diffHelp(kpi, 'Region'), value: r => ppDiff(own(r), reg(r)), render: r => (regionBench(r).b ? fmt.pp(ppDiff(own(r), reg(r)), 1) : na(regionBench(r).why)), group: g},
+    {key: `diffChain-${kpi}`, header: 'Difference vs Chain (pp)', help: diffHelp(kpi, 'Chain'), value: r => (refFor(r).showChain ? ppDiff(own(r), chainV) : null), render: r => (refFor(r).showChain ? fmt.pp(ppDiff(own(r), chainV), 1) : na(NA_IS_CHAIN)), group: g},
   ];
 }
 
-/** Compact expandable benchmark values for the selected store's region and the chain. */
-function BenchmarkSummary({selected, regionId, region, chain, methodLabel}: {selected: {name: string; p: PeopleTotals} | null; regionId: string | null; region: Benchmark | null; chain: Benchmark; methodLabel: string}) {
-  const regionName = regionId ? regionById.get(regionId)?.name : null;
-  const lines: {label: string; store: (p: PeopleTotals) => string; bench: (b: Benchmark) => string; count: boolean}[] = [
-    {label: 'Beginning Headcount', store: p => fmt.int(p.begin), bench: b => fmt.dec1(b.begin), count: true},
-    {label: 'Ending Headcount', store: p => fmt.int(p.end), bench: b => fmt.dec1(b.end), count: true},
-    {label: 'Hires', store: p => fmt.int(p.hires), bench: b => fmt.dec1(b.hires), count: true},
-    {label: 'Terminations', store: p => fmt.int(p.terms), bench: b => fmt.dec1(b.terms), count: true},
-    {label: 'Turnover rate', store: p => fmt.pct(turnoverOf(p)), bench: b => fmt.pct(b.turnover), count: false},
-    {label: 'Retention rate', store: p => fmt.pct(retentionOf(p)), bench: b => fmt.pct(b.retention), count: false},
-  ];
+/** Compact benchmark values (the information of the former Benchmark summary): chain and, when the analysis scope
+ *  lies in one region, that region. Counts are averages per store, never organization totals. */
+function BenchmarkReference({chain, regionId, region, methodLabel}: {chain: Benchmark; regionId: string | null; region: Benchmark | null; methodLabel: string}) {
+  const line = (name: string, b: Benchmark) => (
+    <span className="bench-ref-line">
+      <b>{name} benchmark</b> ({b.stores} stores): turnover {fmt.pct(b.turnover)} · retention {fmt.pct(b.retention)} ({methodLabel}) · average per store: beginning {fmt.dec1(b.begin)}, ending {fmt.dec1(b.end)}, hires {fmt.dec1(b.hires)}, terminations {fmt.dec1(b.terms)}
+    </span>
+  );
   return (
-    <details className="bench-summary">
-      <summary>
-        Benchmark summary <span className="note">· {selected ? `${selected.name}, ${regionName} and chain` : regionName ? `${regionName} and chain` : 'chain'}</span>
-      </summary>
-      <table aria-label="Benchmark summary">
-        <thead>
-          <tr>
-            <th scope="col">Measure</th>
-            {selected ? <th scope="col">{selected.name} · store value</th> : null}
-            {region && regionName ? <th scope="col">{regionName} benchmark</th> : null}
-            <th scope="col">Chain benchmark</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lines.map(l => (
-            <tr key={l.label}>
-              <th scope="row" className="txt">
-                {l.label}
-                <span className="cell-sub">{l.count ? 'Benchmarks: average per store' : `Benchmarks: ${methodLabel}`}</span>
-              </th>
-              {selected ? <td>{l.store(selected.p)}</td> : null}
-              {region && regionName ? <td>{l.bench(region)}</td> : null}
-              <td>{l.bench(chain)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {!region || !regionName ? <p className="note">Several regions are in scope: select a region or a store to add its region benchmark.</p> : null}
-      <p className="note">
-        Store values are counts and rates of one store. Benchmark counts are averages per store ({region && regionName ? `${region.stores} stores in ${regionName}, ` : ''}
-        {chain.stores} in the chain), not organization totals. Selected time frame.
-      </p>
-    </details>
+    <p className="bench-ref">
+      {line('Chain', chain)}
+      {region && regionId ? line(regionById.get(regionId)?.name ?? 'Region', region) : null}
+      <InfoTip text="Benchmarks for the selected time frame. Rates follow the benchmark method; counts are averages per store, so they are compared with a row's own average per store (shown when hovering a count), never with its total." label="About the benchmark values" align="left" />
+    </p>
   );
 }
 
-type Point = {label: string; partial: boolean; store: Record<string, number | null>; region: Record<string, number | null>; chain: Record<string, number | null>};
+type Flat = {label: string; scope: number | null; region: number | null; chain: number | null};
+type Series = {key: 'scope' | 'region' | 'chain'; label: string; color: string; dash?: boolean};
 
-function TrendSection({scope, selectedId, method, hcBench, setHcBench, benchNote}: {scope: Scope; selectedId: string | null; method: 'weighted' | 'simple'; hcBench: HcBench; setHcBench: (v: HcBench) => void; benchNote: string}) {
+function TrendSection({scope, row, scopeTitle, method, benchNote}: {scope: Scope; row: Row; scopeTitle: string; method: 'weighted' | 'simple'; benchNote: string}) {
   const {unit, buckets} = useMemo(() => trendBuckets(scope.from, scope.to), [scope.from, scope.to]);
-  const store = selectedId ? storeById.get(selectedId)! : null;
-  const data: Point[] = useMemo(() => {
-    if (!store) return [];
-    return buckets.map(b => {
-      const byStore = peopleRollup(scope.chain, scope.people, b.from, b.to, 'store');
-      const all = new Map([...scope.chain].map(id => [id, byStore.get(id) ?? emptyPeople()]));
-      const bm = benchmarks(all, method);
-      const p = all.get(store.id) ?? emptyPeople();
-      const reg = bm.region.get(store.regionId)!;
-      const pick = (x: {turnover: number | null; retention: number | null; begin: number | null; end: number | null; hires: number | null; terms: number | null}) => ({turnover: x.turnover, retention: x.retention, begin: x.begin, end: x.end, hires: x.hires, terms: x.terms});
-      return {label: b.label, partial: b.partial, store: pick({turnover: turnoverOf(p), retention: retentionOf(p), begin: p.begin, end: p.end, hires: p.hires, terms: p.terms}), region: pick(reg), chain: pick(bm.chain)};
-    });
-  }, [buckets, scope.chain, scope.people, store, method]);
+  const ref = referenceSeries(row.storeIds, scope.chain);
+  const ids = useMemo(() => new Set(row.storeIds), [row.storeIds]);
+  const points = useMemo(() => scopeTrend(ids, scope.chain, scope.people, buckets, method, ref.regionId), [ids, scope.chain, scope.people, buckets, method, ref.regionId]);
+  const regionName = ref.regionId ? (regionById.get(ref.regionId)?.name ?? 'Region') : null;
+  const wholeChain = !ref.showChain && !ref.regionId;
+  const short = wholeChain ? 'Chain' : row.level === 'chain' ? 'Filtered selection' : row.name;
+  const series: Series[] = [{key: 'scope', label: short, color: S.scope}, ...(regionName ? [{key: 'region' as const, label: `${regionName} benchmark`, color: S.region}] : []), ...(ref.showChain ? [{key: 'chain' as const, label: 'Chain benchmark', color: S.chain, dash: true}] : [])];
 
   const unitText = unit === 'period' ? 'fiscal period (4-4-5)' : 'week';
   const partialNote = buckets.some(b => b.partial) ? ' * Partial period: only the weeks inside the time frame.' : '';
   const timeNote = `One point per ${unitText} of the selected time frame (${buckets.length} ${unit === 'period' ? 'periods' : 'weeks'}). Rates are per ${unit}, not annualized.${partialNote}`;
-  if (!store)
-    return (
-      <VisualCard title="Store trends vs region and chain" filters={<VisualFilters scope={scope} notes={[benchNote]} />}>
-        <EmptyState>Select a store to see its turnover, retention, hires, terminations and headcount over time against its region and the chain. Use the Store filter, a ranking bar or a store name in the table.</EmptyState>
-      </VisualCard>
-    );
-  const regionName = regionById.get(store.regionId)?.name ?? 'Region';
-  const flat = (k: keyof Point['store']) => data.map(d => ({label: d.label, partial: d.partial, store: d.store[k], region: d.region[k], chain: d.chain[k]}));
-  const filtersInfo = <VisualFilters scope={scope} notes={[benchNote, timeNote]} />;
-  const rateKey = [
-    {label: store.name, color: S.store, kind: 'line' as const},
-    {label: `${regionName} benchmark`, color: S.region, kind: 'line' as const},
-    {label: 'Chain benchmark', color: S.chain, kind: 'dash' as const},
-  ];
-  const countKey = [
-    {label: `${store.name} · count`, color: S.store},
-    {label: `${regionName} · average per store`, color: S.region, kind: 'line' as const},
-    {label: 'Chain · average per store', color: S.chain, kind: 'dash' as const},
-  ];
-  const hb = hcBench === 'region' ? {name: regionName, color: S.region} : {name: 'Chain', color: S.chain};
-  const hc = data.map(d => ({label: d.label, sb: d.store.begin, se: d.store.end, bb: (hcBench === 'region' ? d.region : d.chain).begin, be: (hcBench === 'region' ? d.region : d.chain).end}));
+  // Headcount is a snapshot count, not a rate: its note keeps the time points but not the rate wording.
+  const hcNote = `One point per ${unitText} of the selected time frame (${buckets.length} ${unit === 'period' ? 'periods' : 'weeks'}); each point shows the snapshots at the start and end of that ${unit}.${partialNote}`;
+  const filtersInfo = <VisualFilters scope={scope} notes={[benchNote, timeNote, `Analysis scope: ${scopeTitle} (${row.storeIds.length} stores).`]} />;
+  const rate = (k: Kpi): Flat[] => points.map(p => ({label: p.label, scope: k === 'turnover' ? turnoverOf(p.scope) : retentionOf(p.scope), region: p.region?.[k] ?? null, chain: p.chain[k]}));
+  const counts = (k: 'hires' | 'terms') => points.map(p => ({label: p.label, value: p.scope[k], stores: p.stores, region: p.region?.[k] ?? null, chain: p.chain[k]}));
+  const hc = points.map(p => ({label: p.label, begin: p.scope.begin, end: p.scope.end, stores: p.stores, rb: p.region?.begin ?? null, re: p.region?.end ?? null, cb: p.chain.begin, ce: p.chain.end}));
 
   return (
-    <section aria-label="Store trends" className="trend-grid">
-      <RateChart title="Turnover Rate over Time" help={`Terminations / average headcount per ${unit}, for ${store.name}, ${regionName} and the chain. ${timeNote}`} data={flat('turnover')} keys={rateKey} names={[store.name, regionName]} filters={filtersInfo} fromZero />
-      <RateChart title="Retention Rate over Time" help={`(Beginning headcount − terminations of those associates) / beginning headcount per ${unit}. Workbook draft (D27). ${timeNote}`} data={flat('retention')} keys={rateKey} names={[store.name, regionName]} filters={filtersInfo} />
-      <CountChart title="Hires over Time" help={`${store.name}: number of hires per ${unit} (event count). ${regionName} and chain: average hires per store, so one store is never compared with a whole region's total. ${timeNote}`} data={flat('hires')} keys={countKey} names={[store.name, regionName]} filters={filtersInfo} />
-      <CountChart title="Terminations over Time" help={`${store.name}: number of terminations per ${unit} (event count). ${regionName} and chain: average terminations per store. ${timeNote}`} data={flat('terms')} keys={countKey} names={[store.name, regionName]} filters={filtersInfo} />
-      <VisualCard
-        title="Beginning & Ending Headcount over Time"
-        className="span-2"
-        subtitle={`${store.name} (counts) vs ${hb.name} (average per store). Beginning = active the day before each ${unit} starts; ending = active on its last day.`}
-        filters={filtersInfo}
-        actions={<Segmented label="Headcount benchmark" value={hcBench} options={[{id: 'region', label: `${regionName} benchmark`}, {id: 'chain', label: 'Chain benchmark'}]} onChange={setHcBench} size="sm" />}
-      >
-        <ChartKey
-          items={[
-            {label: `${store.name} · ending`, color: S.store, kind: 'line'},
-            {label: `${store.name} · beginning`, color: S.store, kind: 'dash'},
-            {label: `${hb.name} · ending (avg per store)`, color: hb.color, kind: 'line'},
-            {label: `${hb.name} · beginning (avg per store)`, color: hb.color, kind: 'dash'},
-          ]}
-        />
-        <div className="chart-h260">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={hc} margin={{top: 8, right: 16, left: 8, bottom: 0}} accessibilityLayer>
-              <CartesianGrid stroke={C.grid} vertical={false} />
-              <XAxis dataKey="label" tick={AXIS} interval="preserveStartEnd" minTickGap={10} />
-              <YAxis tick={AXIS} width={52} tickFormatter={v => fmt.int(v)} domain={['auto', 'auto']} label={{value: 'Associates', angle: -90, position: 'insideLeft', fontSize: 11, fill: C.axis}} />
-              <Tooltip
-                content={({active, payload}) => {
-                  const p = active && payload?.[0]?.payload;
-                  if (!p) return null;
-                  return (
-                    <TipBox
-                      title={p.label}
-                      rows={[
-                        {label: `${store.name} · beginning`, value: fmt.int(p.sb), swatch: S.store},
-                        {label: `${store.name} · ending`, value: fmt.int(p.se), swatch: S.store},
-                        {label: `${hb.name} · beginning (avg per store)`, value: fmt.dec1(p.bb), swatch: hb.color},
-                        {label: `${hb.name} · ending (avg per store)`, value: fmt.dec1(p.be), swatch: hb.color},
-                      ]}
-                    />
-                  );
-                }}
-              />
-              <Line dataKey="se" name={`${store.name} ending`} stroke={S.store} strokeWidth={2.5} dot={{r: 2}} isAnimationActive={ANIMATE} />
-              <Line dataKey="sb" name={`${store.name} beginning`} stroke={S.store} strokeWidth={1.5} strokeDasharray="5 3" dot={false} isAnimationActive={ANIMATE} />
-              <Line dataKey="be" name={`${hb.name} ending`} stroke={hb.color} strokeWidth={2} dot={{r: 2}} isAnimationActive={ANIMATE} />
-              <Line dataKey="bb" name={`${hb.name} beginning`} stroke={hb.color} strokeWidth={1.5} strokeDasharray="5 3" dot={false} isAnimationActive={ANIMATE} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-        <p className="chart-note">The axis starts near the data range, not at zero. {timeNote}</p>
-      </VisualCard>
+    <section aria-label={`Trends for ${scopeTitle}`}>
+      <h2 className="section-heading">
+        Trends · {scopeTitle} <span className="note">({row.storeIds.length} {row.storeIds.length === 1 ? 'store' : 'stores'})</span>
+      </h2>
+      <div className="trend-grid">
+        <RateChart title="Turnover Rate over Time" subtitle={`${short}: terminations / average headcount per ${unit}.`} help={`Recalculated from the scope's terminations and headcount for each ${unit}; benchmark lines follow the documented draft (D12, D13). ${timeNote}`} data={rate('turnover')} series={series} filters={filtersInfo} fromZero />
+        <RateChart title="Retention Rate over Time" subtitle={`${short}: cohort retention per ${unit} (draft, D27).`} help={`(Beginning headcount − terminations of those associates) / beginning headcount for each ${unit}, recalculated from the scope's totals. Not 1 − turnover. ${timeNote}`} data={rate('retention')} series={series} filters={filtersInfo} />
+        <CountChart title="Hires over Time" scopeName={short} measure="Hires" help={`Number of hires of ${short} per ${unit} (event count). Benchmarks are averages per store and appear only in the tooltip, next to the scope's own average per store. ${timeNote}`} data={counts('hires')} regionName={regionName} filters={filtersInfo} />
+        <CountChart title="Terminations over Time" scopeName={short} measure="Terminations" help={`Number of terminations of ${short} per ${unit} (event count). Benchmarks are averages per store, in the tooltip only. ${timeNote}`} data={counts('terms')} regionName={regionName} filters={filtersInfo} />
+        <VisualCard title="Beginning & Ending Headcount over Time" className="span-2" subtitle={`${short}: active associates the day before each ${unit} starts (beginning) and on its last day (ending). Counts of the scope; benchmark averages per store in the tooltip.`} filters={<VisualFilters scope={scope} notes={[benchNote, hcNote, `Analysis scope: ${scopeTitle} (${row.storeIds.length} stores).`]} />}>
+          <ChartKey
+            items={[
+              {label: `${short} · ending`, color: S.scope, kind: 'line'},
+              {label: `${short} · beginning`, color: S.scope, kind: 'dash'},
+            ]}
+          />
+          <div className="chart-h260">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={hc} margin={{top: 8, right: 16, left: 8, bottom: 0}} accessibilityLayer>
+                <CartesianGrid stroke={C.grid} vertical={false} />
+                <XAxis dataKey="label" tick={AXIS} interval="preserveStartEnd" minTickGap={10} />
+                <YAxis tick={AXIS} width={56} tickFormatter={v => fmt.int(v)} domain={['auto', 'auto']} label={{value: 'Associates', angle: -90, position: 'insideLeft', fontSize: 11, fill: C.axis}} />
+                <Tooltip
+                  content={({active, payload}) => {
+                    const p = active && payload?.[0]?.payload;
+                    if (!p) return null;
+                    return (
+                      <TipBox
+                        title={p.label}
+                        rows={[
+                          {label: `${short} · beginning`, value: fmt.int(p.begin), swatch: S.scope},
+                          {label: `${short} · ending`, value: fmt.int(p.end), swatch: S.scope},
+                          {label: `${short} · ending per store`, value: fmt.dec1(ratio(p.end, p.stores))},
+                          ...(regionName ? [{label: `${regionName} · ending, average per store`, value: fmt.dec1(p.re)}] : []),
+                          {label: 'Chain · ending, average per store', value: fmt.dec1(p.ce)},
+                        ]}
+                        note="Benchmarks are averages per store, compared with the scope's own average per store."
+                      />
+                    );
+                  }}
+                />
+                <Line dataKey="end" name={`${short} ending`} stroke={S.scope} strokeWidth={2.5} dot={{r: 2}} isAnimationActive={ANIMATE} />
+                <Line dataKey="begin" name={`${short} beginning`} stroke={S.scope} strokeWidth={1.5} strokeDasharray="5 3" dot={false} isAnimationActive={ANIMATE} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="chart-note">The axis starts near the data range, not at zero. {hcNote}</p>
+        </VisualCard>
+      </div>
     </section>
   );
 }
 
-type Flat = {label: string; partial: boolean; store: number | null; region: number | null; chain: number | null};
-
-function ChartTitle({children, help}: {children: string; help: ReactNode}) {
+function ChartTitle({children, help, label}: {children: ReactNode; help: ReactNode; label: string}) {
   return (
     <>
-      {children} <InfoTip text={help} label={`About ${children}`} align="left" />
+      {children} <InfoTip text={help} label={`About ${label}`} align="left" />
     </>
   );
 }
 
-function RateChart({title, help, data, keys, names, filters, fromZero = false}: {title: string; help: string; data: Flat[]; keys: {label: string; color: string; kind?: 'line' | 'dash'}[]; names: [string, string]; filters: ReactNode; fromZero?: boolean}) {
+function RateChart({title, subtitle, help, data, series, filters, fromZero = false}: {title: string; subtitle: string; help: string; data: Flat[]; series: Series[]; filters: ReactNode; fromZero?: boolean}) {
   return (
-    <VisualCard title={title} subtitle={<ChartTitle help={help}>{fromZero ? 'Rate per time bucket; axis starts at 0%.' : 'Rate per time bucket; axis starts near the data range, not at 0%.'}</ChartTitle>} filters={filters}>
-      <ChartKey items={keys} />
+    <VisualCard title={title} subtitle={<ChartTitle help={help} label={title}>{`${subtitle} ${fromZero ? 'Axis starts at 0%.' : 'Axis starts near the data range.'}`}</ChartTitle>} filters={filters}>
+      <ChartKey items={series.map(s => ({label: s.label, color: s.color, kind: s.dash ? ('dash' as const) : ('line' as const)}))} />
       <div className="chart-h220">
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{top: 8, right: 16, left: 8, bottom: 0}} accessibilityLayer>
@@ -353,19 +348,15 @@ function RateChart({title, help, data, keys, names, filters, fromZero = false}: 
                 return (
                   <TipBox
                     title={p.label}
-                    rows={[
-                      {label: names[0], value: fmt.pct(p.store), swatch: S.store},
-                      {label: `${names[1]} benchmark`, value: `${fmt.pct(p.region)} (store ${fmt.pp(ppDiff(p.store, p.region), 1)})`, swatch: S.region},
-                      {label: 'Chain benchmark', value: `${fmt.pct(p.chain)} (store ${fmt.pp(ppDiff(p.store, p.chain), 1)})`, swatch: S.chain},
-                    ]}
-                    note="pp = arithmetic difference between two percentages."
+                    rows={series.map(s => ({label: s.label, value: s.key === 'scope' ? fmt.pct(p.scope) : `${fmt.pct(p[s.key])} (scope ${fmt.pp(ppDiff(p.scope, p[s.key]), 1)})`, swatch: s.color}))}
+                    note={series.length > 1 ? 'pp = arithmetic difference between two percentages.' : undefined}
                   />
                 );
               }}
             />
-            <Line dataKey="store" name={names[0]} stroke={S.store} strokeWidth={2.5} dot={{r: 2.5}} isAnimationActive={ANIMATE} />
-            <Line dataKey="region" name={`${names[1]} benchmark`} stroke={S.region} strokeWidth={2} dot={{r: 1.5}} isAnimationActive={ANIMATE} />
-            <Line dataKey="chain" name="Chain benchmark" stroke={S.chain} strokeWidth={2} strokeDasharray="5 3" dot={false} isAnimationActive={ANIMATE} />
+            {series.map(s => (
+              <Line key={s.key} dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={s.key === 'scope' ? 2.5 : 2} strokeDasharray={s.dash ? '5 3' : undefined} dot={s.key === 'scope' ? {r: 2.5} : false} isAnimationActive={ANIMATE} />
+            ))}
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -373,36 +364,38 @@ function RateChart({title, help, data, keys, names, filters, fromZero = false}: 
   );
 }
 
-function CountChart({title, help, data, keys, names, filters}: {title: string; help: string; data: Flat[]; keys: {label: string; color: string; kind?: 'line' | 'dash'}[]; names: [string, string]; filters: ReactNode}) {
+type CountPoint = {label: string; value: number; stores: number; region: number | null; chain: number | null};
+
+function CountChart({title, scopeName, measure, help, data, regionName, filters}: {title: string; scopeName: string; measure: string; help: string; data: CountPoint[]; regionName: string | null; filters: ReactNode}) {
   return (
-    <VisualCard title={title} subtitle={<ChartTitle help={help}>Bars: store event count. Lines: region and chain average per store.</ChartTitle>} filters={filters}>
-      <ChartKey items={keys} />
+    <VisualCard title={title} subtitle={<ChartTitle help={help} label={title}>{`${scopeName}: ${measure.toLowerCase()} per time bucket (count). Benchmark averages per store in the tooltip.`}</ChartTitle>} filters={filters}>
+      <ChartKey items={[{label: `${scopeName} · ${measure.toLowerCase()} (count)`, color: S.scope}]} />
       <div className="chart-h220">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{top: 8, right: 16, left: 8, bottom: 0}} accessibilityLayer>
             <CartesianGrid stroke={C.grid} vertical={false} />
             <XAxis dataKey="label" tick={AXIS} interval="preserveStartEnd" minTickGap={10} />
-            <YAxis tick={AXIS} width={40} allowDecimals={false} domain={[0, 'auto']} />
+            <YAxis tick={AXIS} width={44} allowDecimals={false} domain={[0, 'auto']} />
             <Tooltip
               cursor={{fill: '#f3f2f1'}}
               content={({active, payload}) => {
-                const p = active && (payload?.[0]?.payload as Flat | undefined);
+                const p = active && (payload?.[0]?.payload as CountPoint | undefined);
                 if (!p) return null;
                 return (
                   <TipBox
                     title={p.label}
                     rows={[
-                      {label: `${names[0]} · count`, value: fmt.int(p.store), swatch: S.store},
-                      {label: `${names[1]} · average per store`, value: fmt.dec1(p.region), swatch: S.region},
-                      {label: 'Chain · average per store', value: fmt.dec1(p.chain), swatch: S.chain},
+                      {label: `${scopeName} · count`, value: fmt.int(p.value), swatch: S.scope},
+                      {label: `${scopeName} · per store (${p.stores} ${p.stores === 1 ? 'store' : 'stores'})`, value: fmt.dec1(ratio(p.value, p.stores))},
+                      ...(regionName ? [{label: `${regionName} · average per store`, value: fmt.dec1(p.region)}] : []),
+                      {label: 'Chain · average per store', value: fmt.dec1(p.chain)},
                     ]}
+                    note="Benchmarks are averages per store: compare them with the scope's per-store value, not with its count."
                   />
                 );
               }}
             />
-            <Bar dataKey="store" name={`${names[0]} count`} fill={S.store} maxBarSize={22} isAnimationActive={ANIMATE} />
-            <Line dataKey="region" name={`${names[1]} average per store`} stroke={S.region} strokeWidth={2} dot={{r: 1.5}} isAnimationActive={ANIMATE} />
-            <Line dataKey="chain" name="Chain average per store" stroke={S.chain} strokeWidth={2} strokeDasharray="5 3" dot={false} isAnimationActive={ANIMATE} />
+            <Bar dataKey="value" name={`${scopeName} ${measure}`} fill={S.scope} maxBarSize={22} isAnimationActive={ANIMATE} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -410,17 +403,21 @@ function CountChart({title, help, data, keys, names, filters}: {title: string; h
   );
 }
 
-function Ranking({rows, selectedId, onSelect, chain, uniqueRegion, regionOf, scope, benchNote}: {rows: Row[]; selectedId: string | null; onSelect: (id: string) => void; chain: number | null; uniqueRegion: string | null; regionOf: (id: string) => Benchmark | null; scope: Scope; benchNote: string}) {
-  const ranked = rows.filter(r => r.turnover !== null).sort((a, b) => (b.turnover ?? 0) - (a.turnover ?? 0) || a.number - b.number);
-  const top = ranked.slice(0, RANK_LIMIT).map(r => ({id: r.id, name: r.name, v: r.turnover, region: r.region, regionV: regionOf(r.regionId)?.turnover ?? null}));
-  const rank = selectedId ? ranked.findIndex(r => r.id === selectedId) + 1 : 0;
+function Ranking({stores, selectedId, onSelect, chain, regionOf, uniqueRegion, scope, benchNote}: {stores: Row[]; selectedId: string | null; onSelect: (id: string) => void; chain: number | null; regionOf: (id: string) => Benchmark | null; uniqueRegion: string | null; scope: Scope; benchNote: string}) {
+  const regionIdOf = (r: Row) => r.ancestors.find(a => a.id.startsWith('R'))?.id ?? '';
+  const ranked = stores
+    .map(r => ({r, v: turnoverOf(r.p)}))
+    .filter(x => x.v !== null)
+    .sort((a, b) => (b.v ?? 0) - (a.v ?? 0) || a.r.name.localeCompare(b.r.name, 'en', {numeric: true}));
+  const top = ranked.slice(0, RANK_LIMIT).map(({r, v}) => ({id: r.id, name: r.name, v, region: regionById.get(regionIdOf(r))?.name ?? '', regionV: regionOf(regionIdOf(r))?.turnover ?? null}));
+  const rank = selectedId ? ranked.findIndex(x => x.r.id === selectedId) + 1 : 0;
   const regionV = uniqueRegion ? (regionOf(uniqueRegion)?.turnover ?? null) : null;
   const regionName = uniqueRegion ? regionById.get(uniqueRegion)?.name : null;
   return (
     <VisualCard
       title="Store ranking by turnover rate"
-      subtitle={`Showing ${top.length} of ${ranked.length} stores, highest turnover first. All stores are in the table below. A ranking for investigation, not a store rating: no thresholds are applied.`}
-      filters={<VisualFilters scope={scope} notes={[benchNote, 'Select a bar to show the store in the trend charts; select it again to clear.']} />}
+      subtitle={`Showing ${top.length} of ${ranked.length} stores, highest turnover first. A secondary tool for investigation, not a store rating: no thresholds are applied. Selecting a bar selects that store for the trends, like a row in the table.`}
+      filters={<VisualFilters scope={scope} notes={[benchNote, 'Select a bar to analyze the store in the trends; select it again to return to the filtered scope.']} />}
     >
       <ChartKey items={[{label: 'Store turnover', color: C.comparison}, {label: 'Selected store', color: C.highlight}, {label: 'Chain benchmark', color: S.chain, kind: 'dash'}, ...(regionName ? [{label: `${regionName} benchmark`, color: S.region, kind: 'dash' as const}] : [])]} />
       <div style={{height: top.length * 30 + 40}}>
@@ -444,7 +441,7 @@ function Ranking({rows, selectedId, onSelect, chain, uniqueRegion, regionOf, sco
                       {label: `${p.region} benchmark`, value: `${fmt.pct(p.regionV)} (store ${fmt.pp(ppDiff(p.v, p.regionV), 1)})`},
                       {label: 'Chain benchmark', value: `${fmt.pct(chain)} (store ${fmt.pp(ppDiff(p.v, chain), 1)})`},
                     ]}
-                    note="Select the bar to show this store's trends."
+                    note="Select the bar to analyze this store in the trends."
                   />
                 );
               }}

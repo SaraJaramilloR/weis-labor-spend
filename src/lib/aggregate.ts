@@ -13,6 +13,7 @@ export type LaborTotals = {
   salesBud: number;
   items: number;
   itemsLY: number;
+  itemsBud: number;
   itemsMdoc: number;
   pay: number;
   payLY: number;
@@ -55,7 +56,7 @@ export type StoreTotals = {
   sqft: number;
 };
 
-export const emptyLabor = (): LaborTotals => ({rows: 0, sales: 0, salesLY: 0, salesBud: 0, items: 0, itemsLY: 0, itemsMdoc: 0, pay: 0, payLY: 0, payBud: 0, payMdoc: 0, hours: 0, hoursLY: 0, hoursBud: 0, hoursMdoc: 0, hoursProj: 0, otHours: 0, otHoursLY: 0, otPay: 0, otPayLY: 0, otBasePay: 0, otBasePayLY: 0, vacHours: 0, vacHoursLY: 0, ftHours: 0, flexVar: 0, tx: 0, txLY: 0});
+export const emptyLabor = (): LaborTotals => ({rows: 0, sales: 0, salesLY: 0, salesBud: 0, items: 0, itemsLY: 0, itemsBud: 0, itemsMdoc: 0, pay: 0, payLY: 0, payBud: 0, payMdoc: 0, hours: 0, hoursLY: 0, hoursBud: 0, hoursMdoc: 0, hoursProj: 0, otHours: 0, otHoursLY: 0, otPay: 0, otPayLY: 0, otBasePay: 0, otBasePayLY: 0, vacHours: 0, vacHoursLY: 0, ftHours: 0, flexVar: 0, tx: 0, txLY: 0});
 export const emptyStore = (): StoreTotals => ({tx: 0, txLY: 0, storeSales: 0, storeSalesLY: 0, storeItems: 0, storeItemsLY: 0, cleanSales: 0, cleanSalesLY: 0, sqft: 0});
 
 export function addFact(t: LaborTotals, f: LaborFact) {
@@ -65,6 +66,7 @@ export function addFact(t: LaborTotals, f: LaborFact) {
   t.salesBud += f.salesBud;
   t.items += f.items;
   t.itemsLY += f.itemsLY;
+  t.itemsBud += f.itemsBud;
   t.itemsMdoc += f.itemsMdoc;
   t.pay += f.pay;
   t.payLY += f.payLY;
@@ -185,9 +187,10 @@ export function refLaborRate(t: LaborTotals, ref: Target) {
 export function refAhr(t: LaborTotals, ref: Target) {
   return ref === 'budget' ? ahr(t.payBud, t.hoursBud) : ref === 'mdoc' ? ahr(t.payMdoc, t.hoursMdoc) : ahr(t.payLY, t.hoursLY);
 }
-/** IPLH reference: MDoc = Items MDoc / Hours MDoc; LY = Items LY / Hours LY; no budget items in the Ops 100 draft. */
+/** IPLH reference: MDoc = Items MDoc / Hours MDoc (the OPS107 report comparison and the prototype's primary IPLH
+ *  reference); Budget = Items Budget / Hours Budget (Ops 100 `IPLH Budget`); LY = Items LY / Hours LY. D01 open. */
 export function refIplh(t: LaborTotals, ref: Target) {
-  return ref === 'mdoc' ? iplh(t.itemsMdoc, t.hoursMdoc) : ref === 'ly' ? iplh(t.itemsLY, t.hoursLY) : null;
+  return ref === 'mdoc' ? iplh(t.itemsMdoc, t.hoursMdoc) : ref === 'budget' ? iplh(t.itemsBud, t.hoursBud) : iplh(t.itemsLY, t.hoursLY);
 }
 
 /** Core labor KPIs derived from totals. */

@@ -1,7 +1,7 @@
 import {describe, expect, it} from 'vitest';
 import {LAST_WEEK_IDX, WEEKS, periodRange} from '../data/calendar';
 import {STORES} from '../data/org';
-import {benchmarks, groupBenchmark, retentionOf, sumPeople, trendBuckets, turnoverOf} from './peopleBenchmark';
+import {benchmarks, groupBenchmark, referenceSeries, retentionOf, scopeTrend, sumPeople, totalsOf, trendBuckets, turnoverOf} from './peopleBenchmark';
 import {peopleRollup, type PeopleFilter} from './peopleMetrics';
 import {ppDiff, simpleAverage} from './metrics';
 
@@ -62,5 +62,47 @@ describe('trend buckets follow the selected time frame', () => {
   it('short time frames use weeks (one point per week)', () => {
     expect(trendBuckets(LAST_WEEK_IDX, LAST_WEEK_IDX)).toMatchObject({unit: 'week', buckets: [{from: LAST_WEEK_IDX, to: LAST_WEEK_IDX}]});
     expect(trendBuckets(LAST_WEEK_IDX - 3, LAST_WEEK_IDX).buckets).toHaveLength(4);
+  });
+});
+
+describe('benchmark hierarchy and analysis scope', () => {
+  const regionIds = STORES.filter(s => s.regionId === 'R2').map(s => s.id);
+  const districtIds = STORES.filter(s => s.districtId === 'D05').map(s => s.id);
+  const byRegion = peopleRollup(all, none, from, LAST_WEEK_IDX, 'region');
+  const byDistrict = peopleRollup(all, none, from, LAST_WEEK_IDX, 'district');
+
+  it('a row total adds its stores: same as the rollup at that level (snapshots and events, no double counting)', () => {
+    const r = totalsOf(byStore, regionIds);
+    expect(r).toEqual(byRegion.get('R2'));
+    expect(totalsOf(byStore, districtIds)).toEqual(byDistrict.get('D05'));
+    expect(r.end).toBe(r.begin + r.hires - r.terms);
+  });
+  it('row rates are recalculated from the row components, not averaged from child rows', () => {
+    const r = totalsOf(byStore, regionIds);
+    const districts = ['D05', 'D06', 'D07', 'D08'].map(d => byDistrict.get(d)!);
+    expect(turnoverOf(r)).toBeCloseTo(r.terms / ((r.begin + r.end) / 2), 12);
+    expect(turnoverOf(r)).not.toBeCloseTo(simpleAverage(districts.map(turnoverOf))!, 6);
+    expect(retentionOf(r)).toBeCloseTo((r.begin - r.termsOfBeginning) / r.begin, 12);
+  });
+  it('reference series are meaningful and non-duplicated by scope', () => {
+    expect(referenceSeries(all, all)).toEqual({regionId: null, showChain: false});
+    expect(referenceSeries(regionIds, all)).toEqual({regionId: null, showChain: true});
+    expect(referenceSeries(districtIds, all)).toEqual({regionId: 'R2', showChain: true});
+    expect(referenceSeries(['S101'], all)).toEqual({regionId: 'R1', showChain: true});
+    expect(referenceSeries(['S101', 'S141'], all)).toEqual({regionId: null, showChain: true});
+  });
+  it('trend points: scope totals and benchmarks of each bucket; headcount is a snapshot per bucket, never summed', () => {
+    const {buckets} = trendBuckets(from, LAST_WEEK_IDX);
+    const pts = scopeTrend(new Set(districtIds), all, none, buckets, 'weighted', 'R2');
+    expect(pts).toHaveLength(buckets.length);
+    const b = buckets[1];
+    const direct = peopleRollup(new Set(districtIds), none, b.from, b.to, 'none').get('all')!;
+    expect(pts[1].scope).toEqual(direct);
+    const bm = benchmarks(peopleRollup(all, none, b.from, b.to, 'store'), 'weighted');
+    expect(pts[1].chain.turnover).toBeCloseTo(bm.chain.turnover!, 12);
+    expect(pts[1].region!.hires).toBeCloseTo(bm.region.get('R2')!.hires!, 12);
+    // Ending headcount of one bucket is the beginning of the next (snapshots), not an accumulation.
+    expect(pts[2].scope.begin).toBe(pts[1].scope.end);
+    expect(pts[1].stores).toBe(districtIds.length);
   });
 });

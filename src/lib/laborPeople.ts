@@ -97,7 +97,7 @@ export function laborForPeople(stores: Set<string>, dept: 'All' | string, from: 
       if (!t) out.set(k, (t = emptyLabor()));
       addFact(t, {
         ...fact,
-        sales: 0, salesLY: 0, salesBud: 0, items: 0, itemsLY: 0, itemsMdoc: 0, tx: 0, txLY: 0,
+        sales: 0, salesLY: 0, salesBud: 0, items: 0, itemsLY: 0, itemsBud: 0, itemsMdoc: 0, tx: 0, txLY: 0,
         payBud: 0, payMdoc: 0, hoursBud: 0, hoursMdoc: 0,
         hours: fact.hours * s, pay: fact.pay * s, hoursProj: fact.hoursProj * s, otHours: fact.otHours * s, otPay: fact.otPay * s, vacHours: fact.vacHours * s, ftHours: ty?.ftHours ?? 0,
         hoursLY: fact.hoursLY * sl, payLY: fact.payLY * sl, otHoursLY: fact.otHoursLY * sl, otPayLY: fact.otPayLY * sl, vacHoursLY: fact.vacHoursLY * sl,
@@ -107,49 +107,60 @@ export function laborForPeople(stores: Set<string>, dept: 'All' | string, from: 
   return {totals: out, lyAvailable};
 }
 
+export type ProHours = {ft: number | null; pt: number | null; rows: number};
+
 /** Ops 100 "UKG FT / PT Average Pro Hours": average of the row-level average productive hours, positive values
  *  only (workbook R31). Row = store × department × week; row FT value = FT hours / active FT associates. */
-export function averageProHours(stores: Set<string>, dept: 'All' | string, from: number, to: number, f?: PeopleFilter): {ft: number | null; pt: number | null; rows: number} {
+export function averageProHours(stores: Set<string>, dept: 'All' | string, from: number, to: number, f?: PeopleFilter): ProHours {
+  return averageProHoursBy(stores, dept, from, to, f, 'none').get('all') ?? {ft: null, pt: null, rows: 0};
+}
+
+/** Same measure for each group (store, or store × department), in one pass over the rows. */
+export function averageProHoursBy(stores: Set<string>, dept: 'All' | string, from: number, to: number, f: PeopleFilter | undefined, group: 'none' | 'store' | 'storeDept'): Map<string, ProHours> {
   const all = rowCounts();
   const sub = f && peopleFilterActive(f) ? rowCounts(f) : all;
-  let ftSum = 0, ftN = 0, ptSum = 0, ptN = 0, rows = 0;
+  const acc = new Map<string, {ftSum: number; ftN: number; ptSum: number; ptN: number; rows: number}>();
   for (let w = from; w <= to; w++) {
     for (const fact of laborByWeek[w] ?? []) {
       if (!stores.has(fact.store) || (dept !== ALL && fact.dept !== dept)) continue;
       const a = all.get(key(w, fact.store, fact.dept));
       const s = sub.get(key(w, fact.store, fact.dept));
       if (!a || !s) continue;
-      rows++;
+      const g = groupOf(group, fact);
+      let x = acc.get(g);
+      if (!x) acc.set(g, (x = {ftSum: 0, ftN: 0, ptSum: 0, ptN: 0, rows: 0}));
+      x.rows++;
       // A filtered row contributes only when the filtered population has associates of that type.
       if (a.ft > 0 && s.ft > 0) {
         const v = fact.ftHours / a.ft;
         if (v > 0) {
-          ftSum += v;
-          ftN++;
+          x.ftSum += v;
+          x.ftN++;
         }
       }
       if (a.pt > 0 && s.pt > 0) {
         const v = (fact.hours - fact.ftHours) / a.pt;
         if (v > 0) {
-          ptSum += v;
-          ptN++;
+          x.ptSum += v;
+          x.ptN++;
         }
       }
     }
   }
-  return {ft: ftN ? ftSum / ftN : null, pt: ptN ? ptSum / ptN : null, rows};
+  return new Map([...acc].map(([g, x]) => [g, {ft: x.ftN ? x.ftSum / x.ftN : null, pt: x.ptN ? x.ptSum / x.ptN : null, rows: x.rows}]));
 }
 
 /** Illustrative attendance incidents (associate-level events) filtered by location, Department (associate home
- *  department) and people filters (tenure at the event week end). Grouped by store or by incident type. */
-export function attendanceRollup(stores: Set<string>, f: PeopleFilter, from: number, to: number, group: 'store' | 'type'): Map<string, number> {
+ *  department) and people filters (tenure at the event week end). Grouped by store, store × home department or
+ *  incident type. */
+export function attendanceRollup(stores: Set<string>, f: PeopleFilter, from: number, to: number, group: 'store' | 'storeDept' | 'type'): Map<string, number> {
   const out = new Map<string, number>();
   for (const e of ATTENDANCE_FACTS) {
     if (e.w < from || e.w > to || !stores.has(e.store) || (f.dept !== ALL && e.dept !== f.dept)) continue;
     const a = ASSOCIATES[e.associate];
     if ((f.position !== ALL && a.position !== f.position) || (f.age !== ALL && a.age !== f.age) || (f.recruiter !== ALL && a.recruiter !== f.recruiter)) continue;
     if (f.tenure !== ALL && tenureBand(a.hire, WEEK_END_MS[e.w]) !== f.tenure) continue;
-    const k = group === 'store' ? e.store : e.type;
+    const k = group === 'store' ? e.store : group === 'storeDept' ? `${e.store}|${e.dept}` : e.type;
     out.set(k, (out.get(k) ?? 0) + 1);
   }
   return out;

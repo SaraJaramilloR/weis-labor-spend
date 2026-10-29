@@ -55,6 +55,7 @@ export function DecisionChip({ids, label = 'Open decision', align = 'right'}: {i
         <span aria-hidden="true">◆</span> {label}
       </button>
       <span role="tooltip" id={id}>
+        <span className="tip-line tip-muted">Open: business definition or comparison rule pending confirmation.</span>
         {items.map(d => (
           <span key={d!.id} className="tip-line">
             <b>

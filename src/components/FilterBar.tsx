@@ -27,7 +27,7 @@ const TIME_MODES: {id: TimeMode; label: string}[] = [
   {id: 'custom', label: 'Custom'},
 ];
 
-const COVERAGE = `Synthetic data from ${usDate(WEEKS[0].start)} to ${usDate(WEEKS[LAST_WEEK_IDX].end)} (FY2025 W01 – FY2026 W43). Weeks run Sunday–Saturday on the 4-4-5 calendar implemented in UC1 and in the Ops date table; UC5 confirmation is pending (D18). 53-week years are not modeled.`;
+const COVERAGE = `Synthetic data from ${usDate(WEEKS[0].start)} to ${usDate(WEEKS[LAST_WEEK_IDX].end)} (FY2025 W01 – FY2026 W43). Weeks run Sunday–Saturday on the 4-4-5 calendar implemented in UC1 and in the Ops date table; UC5 confirmation is pending (D18). 53-week years are not modeled. To report one fiscal period (P1–P12) or quarter, choose Fiscal Calendar, then Fiscal Year and Fiscal period / quarter.`;
 
 /** Report filter bar (BC3 pattern): time row, location row, More filters, Reset and the comparison reference. */
 export function FilterBar({page}: {page: PageMeta}) {
@@ -252,7 +252,7 @@ function TimeRow() {
       </span>
       <Segmented label="Time frame mode" value={draft.mode} options={TIME_MODES} onChange={mode => set({mode})} size="sm" />
       {draft.mode === 'todate' ? (
-        <Field label="Period">
+        <Field label="To-date span">
           {id => (
             <select id={id} value={draft.span} onChange={e => set({span: e.target.value as TimeSelection['span']})}>
               <option value="TODAY" disabled>
@@ -293,7 +293,7 @@ function TimeRow() {
               </select>
             )}
           </Field>
-          <Field label="Period / Quarter">
+          <Field label="Fiscal period / quarter">
             {id => (
               <select id={id} value={draft.unit} onChange={e => set({unit: e.target.value})}>
                 {calendarUnits(draft.fy).map(u => (
