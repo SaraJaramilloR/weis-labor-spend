@@ -44,7 +44,9 @@ try {
   // Tabs navigation
   const pages = ['Store Ops Labor Allocation', 'Turnover, Overtime & Call-off Tracking', 'Turnover & Retention Benchmark', 'Headcount & Hours vs Budget', 'Daily Labor vs Budget', 'People Reporting (Filterable Ops 200)', 'Labor Overview'];
   check('Tabs follow workbook order after Overview', (await evalJs(`[...document.querySelectorAll('.page-tabs button')].map(b => b.textContent).join('|')`)) === ['Labor Overview', ...pages.slice(0, 6)].join('|'));
-  for (const p of pages) { await click(`[...document.querySelectorAll('.page-tabs button')].find(b => b.textContent === ${JSON.stringify(p)})`); await sleep(3500); const h = await text('h1'); check(`tab → ${p}`, h === p, h); }
+  // Every visible date (HTML, chart SVG text, select options, tooltips in title attributes) uses MM/DD/YYYY.
+  const badDates = () => evalJs(`(() => { const txt = [document.body.innerText, ...[...document.querySelectorAll('svg text, option')].map(t => t.textContent), ...[...document.querySelectorAll('[title]')].map(t => t.title)].join(' \\n '); return [...new Set(txt.match(/\\b\\d{4}-\\d{2}-\\d{2}\\b|\\b\\d{1,2}\\/\\d{1,2}\\b(?!\\/\\d)|\\b\\d{1,2}\\/\\d{1,2}\\/\\d{2}\\b(?!\\d)|\\b\\d\\/\\d{1,2}\\/\\d{4}|\\b\\d{2}\\/\\d\\/\\d{4}/g) ?? [])].slice(0, 5).join(', '); })()`);
+  for (const p of pages) { await click(`[...document.querySelectorAll('.page-tabs button')].find(b => b.textContent === ${JSON.stringify(p)})`); await sleep(3500); const h = await text('h1'); check(`tab → ${p}`, h === p, h); const bd = await badDates(); check(`${p}: dates shown as MM/DD/YYYY only`, bd === '', bd); }
   check('URL deep link updated', (await evalJs('location.search')) === '?page=overview');
   // Region filter changes KPIs
   await setSelect('Region', 'R2'); await sleep(2500); const v1 = await kpi(); check('Region filter changes KPI', v1 !== v0, `${v0} → ${v1}`);
@@ -69,8 +71,15 @@ try {
   await click(`[...document.querySelectorAll('[role=radio]')].find(b => b.textContent === 'Rolling')`); await sleep(800); await setSelect('Window', '52'); await sleep(1500); const v4 = await kpi(); check('Rolling 52 weeks changes KPI', v4 !== v0, v4);
   // Invalid custom range shows error and keeps previous
   await click(`[...document.querySelectorAll('[role=radio]')].find(b => b.textContent === 'Custom')`); await sleep(800);
-  await evalJs(`(() => { const i = document.querySelector('input[type=date]'); const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(i, '2026-12-01'); i.dispatchEvent(new Event('input', {bubbles: true})); i.dispatchEvent(new Event('change', {bubbles: true})); })()`); await sleep(800);
+  const typeDate = (i, v) => evalJs(`(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; const el = document.querySelectorAll('.fb-date input[type=text]')[${i}]; set.call(el, ${JSON.stringify(v)}); el.dispatchEvent(new Event('input', {bubbles: true})); })()`);
+  const shown = await evalJs(`[...document.querySelectorAll('.fb-date input[type=text]')].map(i => i.value).join('|')`);
+  check('Custom dates are shown as MM/DD/YYYY whatever the browser locale', /^\d{2}\/\d{2}\/\d{4}\|\d{2}\/\d{2}\/\d{4}$/.test(shown) && (await evalJs(`document.querySelectorAll('.fb-date-native').length === 2 && [...document.querySelectorAll('.fb-date-native')].every(i => getComputedStyle(i).opacity === '0')`)), shown);
+  await typeDate(0, '12/01/2026'); await sleep(800);
   const err = await text('.fb-error'); check('Invalid date range shows message', !!err, err); const v5 = await kpi(); check('Invalid range is not applied', v5 === v5 && !!err);
+  await typeDate(0, '24/10/2026'); await sleep(800);
+  const err2 = await text('.fb-error'); check('Day-first date is rejected, not swapped', !!err2 && err2.includes('MM/DD/YYYY'), err2);
+  await typeDate(0, '09/27/2026'); await sleep(1500);
+  const resolvedTxt = await text('.fb-resolved'); check('Typed 09/27/2026 resolves to its Sunday–Saturday week without shifting', !!resolvedTxt && resolvedTxt.startsWith('09/27/2026 – '), resolvedTxt);
   await click(`document.querySelector('.fb-reset')`); await sleep(1000);
   // Overview: four cards, two charts, links, LY toggle
   check('Overview: four KPI cards and two charts only', (await evalJs(`document.querySelectorAll('.kpi').length`)) === 4 && (await evalJs(`document.querySelectorAll('.visual-card').length`)) === 2 && (await evalJs(`document.querySelectorAll('.data-table').length`)) === 0);
@@ -268,6 +277,12 @@ try {
   await go(base + '?page=daily');
   const dHours = () => evalJs(`[...[...document.querySelectorAll('.kpi')].find(k => k.querySelector('.kpi-label').textContent === 'Labor hours').querySelectorAll('dt')].map(d => d.textContent).join('|')`);
   check('Daily: hours vs Budget by default', (await dHours()) === 'Budgeted hours|vs Budget');
+  const dayTicks = await evalJs(`[...document.querySelectorAll('.recharts-xAxis .recharts-cartesian-axis-tick-value')].map(t => [...t.querySelectorAll('tspan')].map(x => x.textContent).join(' ')).join('|')`);
+  check('Daily: chart days show weekday and MM/DD/YYYY (Sun–Sat, no shift)', /^Sun \d{2}\/\d{2}\/\d{4}\|Mon .*\|Sat \d{2}\/\d{2}\/\d{4}$/.test(dayTicks) && dayTicks.startsWith('Sun 10/18/2026') && dayTicks.endsWith('Sat 10/24/2026'), dayTicks);
+  await evalJs(`(() => { window.__csv = null; const orig = URL.createObjectURL; URL.createObjectURL = b => { window.__csv = b; return orig.call(URL, b); }; })()`);
+  await click(`[...document.querySelectorAll('.data-table button')].find(b => /export/i.test(b.textContent))`); await sleep(800);
+  const dayCsv = (await evalJs(`window.__csv ? window.__csv.text() : ''`)).split('\n').map(l => l.split(',')[0].replace(/"/g, '')).filter(d => /^\d/.test(d));
+  check('Daily: CSV export writes days as MM/DD/YYYY', dayCsv.length === 7 && dayCsv[0] === '10/18/2026' && dayCsv[6] === '10/24/2026', dayCsv.join('|'));
   await click(`[...document.querySelectorAll('.local-controls [role=radio]')].find(b => b.textContent === 'MDoc (operational target)')`); await sleep(800);
   check('Daily: MDoc hours selectable in the normal view; spend stays on Budget', (await dHours()) === 'MDoc hours|vs MDoc' && (await evalJs(`[...document.querySelectorAll('h2')].some(h => h.textContent === 'Daily labor hours vs MDoc')`)) && (await evalJs(`[...[...document.querySelectorAll('.kpi')].find(k => k.querySelector('.kpi-label').textContent === 'Labor spend').querySelectorAll('dt')].map(d => d.textContent).join('|')`)) === 'Budgeted spend|vs Budget');
   await click(`[...document.querySelectorAll('.local-controls [role=radio]')].find(b => b.textContent === 'Budget')`); await sleep(500);
@@ -296,7 +311,7 @@ try {
   check('Headcount card reconciles with no other movements', (await evalJs(`[...document.querySelectorAll('.kpi')].find(k => k.querySelector('.kpi-label').textContent.startsWith('Beginning'))?.textContent`)).includes('Other movements+0') || (await evalJs(`[...document.querySelectorAll('.kpi')].find(k => k.querySelector('.kpi-label').textContent.startsWith('Beginning'))?.textContent`)).includes('Other movements0'));
   // Single-day custom range is reported as its whole week and says so
   await click(`[...document.querySelectorAll('[role=radio]')].find(b => b.textContent === 'Custom')`); await sleep(800);
-  await evalJs(`(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; const [a, b] = document.querySelectorAll('input[type=date]'); set.call(a, '2026-10-24'); a.dispatchEvent(new Event('input', {bubbles: true})); a.dispatchEvent(new Event('change', {bubbles: true})); set.call(b, '2026-10-24'); b.dispatchEvent(new Event('input', {bubbles: true})); b.dispatchEvent(new Event('change', {bubbles: true})); })()`); await sleep(2500);
+  await evalJs(`(() => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; for (const el of document.querySelectorAll('.fb-date input[type=text]')) { set.call(el, '10/24/2026'); el.dispatchEvent(new Event('input', {bubbles: true})); } })()`); await sleep(2500);
   const weeksNote = await text('.fb-weeks-note');
   check('Single day shows the whole-week note', !!weeksNote && weeksNote.includes('10/18/2026 – 10/24/2026'), weeksNote);
   check('Scope line states whole weeks', (await evalJs(`[...document.querySelectorAll('.scope-part')].map(x => x.textContent).join('|')`)).includes('whole weeks; selected 10/24/2026'));

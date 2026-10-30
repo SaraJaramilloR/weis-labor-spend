@@ -9,6 +9,13 @@
 .fb-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .fb-field label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .03em; }
 .fb-field select, .fb-field input { height: 30px; min-width: 130px; max-width: 260px; border: 1px solid #8a8886; border-radius: 2px; padding: 0 8px; background: #fff; color: #252423; font-size: 12px; }
+.fb-date { position: relative; display: inline-flex; }
+.fb-field .fb-date input[type='text'] { min-width: 0; width: 112px; border-radius: 2px 0 0 2px; font-variant-numeric: tabular-nums; }
+.fb-field .fb-date input[aria-invalid='true'] { border-color: var(--sem-unfav); }
+.fb-date-pick { display: inline-grid; place-items: center; width: 30px; height: 30px; border: 1px solid #8a8886; border-left: 0; border-radius: 0 2px 2px 0; background: #fff; color: #252423; }
+.fb-date-pick:hover { background: #f3f2f1; }
+/* Native input kept rendered (showPicker needs it) but invisible: it anchors the calendar popup only. */
+.fb-field .fb-date-native { position: absolute; left: 0; bottom: 0; width: 1px; min-width: 0; height: 1px; padding: 0; border: 0; opacity: 0; pointer-events: none; }
 .fb-field select:disabled { background: #f3f2f1; color: #605e5c; }
 .fb-more, .fb-reset { height: 30px; border: 1px solid #c8c6c4; border-radius: 2px; background: #fff; padding: 0 10px; font-size: 12px; color: #252423; }
 .fb-more.has-value { border-color: var(--dark); font-weight: 700; }

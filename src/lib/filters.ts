@@ -89,6 +89,8 @@ export const DEFAULT_FILTERS: Filters = {
  *  interface must say so; it never shows a weekly total as if it covered only the selected days. */
 export type ResolvedTime = {ok: true; from: number; to: number; label: string; detail: string; partial: boolean; wholeWeeks?: {selected: string; note: string}} | {ok: false; error: string};
 
+/** Custom dates are held as ISO; anything else is an incomplete or invalid MM/DD/YYYY entry. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 const rangeLabel = (a: WeekInfo, b: WeekInfo) => `${usDate(a.start)} – ${usDate(b.end)}`;
 const weekLabel = (w: WeekInfo) => `FY${w.fy} W${String(w.week).padStart(2, '0')}`;
 
@@ -117,7 +119,8 @@ export function resolveTime(t: TimeSelection): ResolvedTime {
     from = to = Math.max(0, Math.min(LAST_WEEK_IDX, t.week));
     label = `Week beginning ${usDate(WEEKS[from].start)}`;
   } else {
-    if (!t.from || !t.to) return {ok: false, error: 'Enter both dates.'};
+    if (!t.from || !t.to) return {ok: false, error: 'Enter both dates (MM/DD/YYYY).'};
+    if (!ISO_DATE.test(t.from) || !ISO_DATE.test(t.to)) return {ok: false, error: 'Enter valid dates as MM/DD/YYYY.'};
     if (t.from > t.to) return {ok: false, error: 'The start date is after the end date.'};
     if (t.to < WEEKS[0].start || t.from > last.end) return {ok: false, error: `Data is available from ${usDate(WEEKS[0].start)} to ${usDate(last.end)}.`};
     from = weekIdxOfDate(t.from);

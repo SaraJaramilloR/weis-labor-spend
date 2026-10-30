@@ -23,6 +23,21 @@ const META = pageById.get('daily')!;
 type GroupBy = 'day' | 'store' | 'dept' | 'storeDept';
 const WEEK_OPTIONS = WEEKS.slice(DAILY_FIRST_WEEK_IDX, LAST_WEEK_IDX + 1).reverse();
 
+/** Two-line day tick (weekday, then MM/DD/YYYY) so all seven days stay labeled at narrow widths. */
+function DayTick({x, y, payload}: {x?: number; y?: number; payload?: {value: string}}) {
+  const [weekday, date] = (payload?.value ?? '').split(' ');
+  return (
+    <text x={x} y={y} textAnchor="middle" fontSize={AXIS.fontSize} fill={AXIS.fill} className="recharts-cartesian-axis-tick-value">
+      <tspan x={x} dy="0.9em">
+        {weekday}
+      </tspan>
+      <tspan x={x} dy="1.2em">
+        {date}
+      </tspan>
+    </text>
+  );
+}
+
 export default function DailyPage() {
   const scope = useScope('daily');
   const {filters, role} = useReport();
@@ -61,7 +76,7 @@ export default function DailyPage() {
   const hoursGroup = hoursRef === 'mdoc' ? 'Labor hours vs MDoc (operational target)' : 'Labor hours vs Budget';
   const rows: Row[] = [...grouped.entries()].map(([id, t]) => ({id, name: nameOf(id), t}));
   const columns: Column<Row>[] = [
-    {key: 'name', header: groupBy === 'day' ? 'Day' : groupBy === 'store' ? 'Store' : groupBy === 'dept' ? 'Department' : 'Store · Department', value: r => (groupBy === 'day' ? Number(r.id) : r.name), render: r => r.name, align: 'left'},
+    {key: 'name', header: groupBy === 'day' ? 'Day' : groupBy === 'store' ? 'Store' : groupBy === 'dept' ? 'Department' : 'Store · Department', value: r => (groupBy === 'day' ? Number(r.id) : r.name), ...(groupBy === 'day' ? {exportValue: (r: Row) => (r.id === 'total' ? 'Total' : usDate(addDays(info.start, Number(r.id))))} : {}), render: r => r.name, align: 'left'},
     {key: 'hours', header: 'Actual', value: r => r.t.hours, render: r => fmt.int(r.t.hours), group: hoursGroup},
     {key: 'hoursRef', header: hRef, value: r => rh(r.t), render: r => fmt.int(rh(r.t)), group: hoursGroup},
     {key: 'hoursVar', header: 'Variance', sub: 'hrs (%)', value: r => variance(r.t.hours, rh(r.t)), render: r => <HoursVar actual={r.t.hours} target={rh(r.t)} />, group: hoursGroup},
@@ -146,7 +161,7 @@ export default function DailyPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart data={chartRows} margin={{top: 8, right: 12, left: 8, bottom: 0}}>
                   <CartesianGrid stroke={C.grid} vertical={false} />
-                  <XAxis dataKey="label" tick={AXIS} />
+                  <XAxis dataKey="label" tick={DayTick} interval={0} height={36} />
                   <YAxis tick={AXIS} width={56} tickFormatter={v => fmt.compact(v)} />
                   <Tooltip cursor={{fill: '#f3f2f1'}} content={({active, payload}) => (active && payload?.[0] ? <TipBox title={payload[0].payload.label} rows={[{label: 'Actual hours', value: fmt.int(payload[0].payload.hours), swatch: C.actual}, {label: `${hRef} hours`, value: fmt.int(payload[0].payload.ref), swatch: C.reference}, {label: 'Variance', value: `${fmt.signedInt(variance(payload[0].payload.hours, payload[0].payload.ref))} hrs`}, {label: 'Labor spend', value: fmt.money(payload[0].payload.pay)}, {label: `Spend ${refName}`, value: fmt.money(payload[0].payload.payRef)}]} /> : null)} />
                   <Bar dataKey="hours" isAnimationActive={ANIMATE} maxBarSize={48} fill={C.actual} />
@@ -161,7 +176,7 @@ export default function DailyPage() {
             filters={<VisualFilters scope={scope} />}
             actions={<Segmented label="Rows" value={groupBy} options={[{id: 'day', label: 'By day'}, {id: 'store', label: 'By store'}, {id: 'dept', label: 'By department'}, {id: 'storeDept', label: 'By store and department'}]} onChange={setGroupBy} size="sm" />}
           >
-            <DataTable rows={rows} columns={columns} rowKey={r => r.id} label="Daily labor vs target" searchText={groupBy === 'day' ? undefined : r => r.name} pinned={[{id: 'total', name: 'Total', t: totalT}]} pinnedLabel={() => 'Total'} initialSort={groupBy === 'day' ? {key: 'name', dir: 'asc'} : {key: 'hoursVar', dir: 'desc'}} exportName={`daily-labor-${info.start}`} />
+            <DataTable rows={rows} columns={columns} rowKey={r => r.id} label="Daily labor vs target" searchText={groupBy === 'day' ? undefined : r => r.name} pinned={[{id: 'total', name: 'Total', t: totalT}]} pinnedLabel={() => 'Total'} initialSort={groupBy === 'day' ? {key: 'name', dir: 'asc'} : {key: 'hoursVar', dir: 'desc'}} exportName={`daily-labor-week-beginning-${usDate(info.start).replaceAll('/', '-')}`} />
           </VisualCard>
 
         </>

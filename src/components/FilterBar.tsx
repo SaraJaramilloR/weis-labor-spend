@@ -1,11 +1,11 @@
-import {useEffect, useId, useState, type ReactNode} from 'react';
+import {useEffect, useId, useRef, useState, type ReactNode} from 'react';
 import {useReport} from '../app/state';
 import type {PageMeta} from '../app/pages';
 import {LAST_WEEK_IDX, WEEKS} from '../data/calendar';
 import {DEPARTMENTS, DISTRICTS, GEOGRAPHIES, REGIONS, STATES, type Store} from '../data/org';
 import {AGE_RANGES, POSITIONS, RECRUITERS, TENURE_BANDS} from '../data/people';
 import {ALL, calendarUnits, changedFilters, DEFAULT_TIME, FISCAL_YEARS, resolveTime, ROLLING, storesForRole, TO_DATE_SPANS, type TimeMode, type TimeSelection} from '../lib/filters';
-import {usDate} from '../lib/format';
+import {parseUsDate, usDate} from '../lib/format';
 import {InfoTip, Segmented} from './ui';
 
 function Field({label, children}: {label: string; children: (id: string) => ReactNode}) {
@@ -15,6 +15,57 @@ function Field({label, children}: {label: string; children: (id: string) => Reac
       <label htmlFor={id}>{label}</label>
       {children(id)}
     </div>
+  );
+}
+
+/** Custom range date field. A native date input displays the browser locale's format (DD/MM/YYYY under en-GB or
+ *  es-CO even on an English page), so the visible value is MM/DD/YYYY text and the native input only opens the
+ *  calendar picker. `onChange` receives an ISO date, or the raw text while it is not a valid date yet. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+function DateInput({id, value, onChange}: {id: string; value: string; onChange: (value: string) => void}) {
+  const [text, setText] = useState(() => (ISO_DATE.test(value) ? usDate(value) : value));
+  const picker = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (ISO_DATE.test(value)) setText(t => (parseUsDate(t) === value ? t : usDate(value)));
+  }, [value]);
+  const invalid = text !== '' && parseUsDate(text) === null;
+  return (
+    <span className="fb-date">
+      <input
+        id={id}
+        type="text"
+        inputMode="numeric"
+        placeholder="MM/DD/YYYY"
+        maxLength={10}
+        autoComplete="off"
+        value={text}
+        aria-invalid={invalid || undefined}
+        onChange={e => {
+          setText(e.target.value);
+          onChange(parseUsDate(e.target.value) ?? e.target.value.trim());
+        }}
+      />
+      <button
+        type="button"
+        className="fb-date-pick"
+        aria-label="Open calendar"
+        title="Open calendar"
+        onClick={e => {
+          // showPicker needs a trusted click and is unavailable in some embedded contexts; typing still works.
+          try {
+            picker.current?.showPicker();
+          } catch {
+            (e.currentTarget.previousElementSibling as HTMLInputElement | null)?.focus();
+          }
+        }}
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+          <path d="M3 2.5h10a1 1 0 0 1 1 1V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1ZM2 6h12M5 1v3M11 1v3" fill="none" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      </button>
+      <input ref={picker} className="fb-date-native" type="date" tabIndex={-1} aria-hidden="true" value={ISO_DATE.test(value) ? value : ''} min={WEEKS[0].start} max={WEEKS[LAST_WEEK_IDX].end} onChange={e => e.target.value && onChange(e.target.value)} />
+    </span>
   );
 }
 
@@ -322,8 +373,8 @@ function TimeRow() {
       ) : null}
       {draft.mode === 'custom' ? (
         <>
-          <Field label="From">{id => <input id={id} type="date" value={draft.from} min={WEEKS[0].start} max={WEEKS[LAST_WEEK_IDX].end} onChange={e => set({from: e.target.value})} />}</Field>
-          <Field label="To">{id => <input id={id} type="date" value={draft.to} min={WEEKS[0].start} max={WEEKS[LAST_WEEK_IDX].end} onChange={e => set({to: e.target.value})} />}</Field>
+          <Field label="From">{id => <DateInput id={id} value={draft.from} onChange={from => set({from})} />}</Field>
+          <Field label="To">{id => <DateInput id={id} value={draft.to} onChange={to => set({to})} />}</Field>
         </>
       ) : null}
       {resolved.ok ? (

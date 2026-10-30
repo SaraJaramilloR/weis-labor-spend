@@ -8,6 +8,8 @@ export type Column<R> = {
   header: string;
   /** Sort and export value. */
   value: (r: R) => number | string | null;
+  /** Export value when it differs from the sort value (e.g. a day sorted by index, exported as MM/DD/YYYY). */
+  exportValue?: (r: R) => number | string | null;
   /** Display; defaults to the value. */
   render?: (r: R) => ReactNode;
   align?: 'left' | 'right';
@@ -128,7 +130,7 @@ export function DataTable<R>({
     const lines: {r: R; level: string}[] = [...pinned.map(r => ({r, level: 'Total'})), ...linesOf(visible).map(l => ({r: l.node.row, level: tree?.levels[l.depth] ?? ''}))];
     const head = columns.map(c => (c.sub ? `${c.header} (${c.sub})` : c.header));
     const withPath = Boolean(tree?.path);
-    const body: Cell[][] = lines.map(({r, level}) => [...(tree ? [level] : []), ...(withPath ? [tree!.path!(r)] : []), ...columns.map(c => c.value(r))]);
+    const body: Cell[][] = lines.map(({r, level}) => [...(tree ? [level] : []), ...(withPath ? [tree!.path!(r)] : []), ...columns.map(c => (c.exportValue ?? c.value)(r))]);
     downloadCsv(exportName ?? label, toCsv(tree ? ['Level', ...(withPath ? ['Path'] : []), ...head] : head, body, [EXPORT_NOTE]));
   };
 

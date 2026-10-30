@@ -2,6 +2,7 @@ import {describe, expect, it} from 'vitest';
 import {LAST_WEEK_IDX} from '../data/calendar';
 import {STORES} from '../data/org';
 import {csvCell, toCsv} from './csv';
+import {parseUsDate, shortDay, usDate} from './format';
 import {DEFAULT_FILTERS, firstCompWeek, isIdStore, resolveTime, sanitizeFilters, storeScope, storesForRole, type Filters} from './filters';
 import {peopleRollup, peopleTotal, type PeopleFilter} from './peopleMetrics';
 
@@ -101,5 +102,30 @@ describe('CSV export', () => {
   });
   it('keeps negative numbers as numbers', () => {
     expect(toCsv(['a'], [[-5]])).toBe('a\r\n-5');
+  });
+});
+
+describe('US date display (MM/DD/YYYY)', () => {
+  it('formats ISO dates as MM/DD/YYYY without shifting the day', () => {
+    expect(usDate('2026-10-24')).toBe('10/24/2026');
+    expect(usDate('2026-01-05')).toBe('01/05/2026');
+    expect(usDate('2025-12-31')).toBe('12/31/2025');
+    expect(shortDay('2026-10-18')).toBe('Sun 10/18/2026');
+    expect(shortDay('2026-10-24')).toBe('Sat 10/24/2026');
+  });
+  it('reads typed dates as month / day / year, including days above 12', () => {
+    expect(parseUsDate('10/24/2026')).toBe('2026-10-24');
+    expect(parseUsDate('1/5/2026')).toBe('2026-01-05');
+    expect(parseUsDate('09/27/2026')).toBe('2026-09-27');
+    expect(usDate(parseUsDate('10/13/2026')!)).toBe('10/13/2026');
+  });
+  it('rejects day-first, impossible and incomplete dates', () => {
+    for (const bad of ['24/10/2026', '02/30/2026', '13/01/2026', '10/24/26', '2026-10-24', '10/24', '', 'abc']) expect(parseUsDate(bad)).toBeNull();
+  });
+  it('custom range: labels use MM/DD/YYYY; invalid typed text fails safely', () => {
+    const r = resolveTime({...DEFAULT_FILTERS.time, mode: 'custom', from: '2026-09-27', to: '2026-10-24'});
+    expect(r.ok && r.detail.startsWith('09/27/2026 – 10/24/2026')).toBe(true);
+    const bad = resolveTime({...DEFAULT_FILTERS.time, mode: 'custom', from: '24/10/2026', to: '2026-10-24'});
+    expect(bad.ok ? '' : bad.error).toBe('Enter valid dates as MM/DD/YYYY.');
   });
 });

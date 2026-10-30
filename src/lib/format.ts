@@ -40,13 +40,21 @@ export const fmt = {
   signedDec2: (v: number | null | undefined) => (ok(v) ? `${sign(Math.round(v * 100))}${two.format(Math.abs(v))}` : NA),
 };
 
-/** ISO date → MM/DD/YYYY. */
+/** ISO date → MM/DD/YYYY. The single display format for every client-facing date (labels, tooltips, exports). */
 export function usDate(iso: string): string {
   const [y, m, d] = iso.split('-');
   return `${m}/${d}/${y}`;
 }
-/** ISO date → "Mon 10/19". */
+/** ISO date → "Sun 10/18/2026". Weekday from the UTC date, so it never shifts with the browser time zone. */
 export function shortDay(iso: string): string {
   const d = new Date(`${iso}T00:00:00Z`);
-  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]} ${iso.slice(5, 7)}/${iso.slice(8, 10)}`;
+  return `${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getUTCDay()]} ${usDate(iso)}`;
+}
+/** Typed MM/DD/YYYY (leading zeros optional) → ISO date, or null when it is not a real calendar date. */
+export function parseUsDate(text: string): string | null {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(text.trim());
+  if (!m) return null;
+  const iso = `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  const ms = Date.parse(`${iso}T00:00:00Z`);
+  return Number.isFinite(ms) && new Date(ms).toISOString().slice(0, 10) === iso ? iso : null;
 }
