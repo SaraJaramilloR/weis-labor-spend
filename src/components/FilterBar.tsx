@@ -70,11 +70,12 @@ function DateInput({id, value, onChange}: {id: string; value: string; onChange: 
 }
 
 const TIME_MODES: {id: TimeMode; label: string}[] = [
-  // Mode labels reused from UC1 (BC3); "Week Beginning" is the workbook filter name.
+  // Mode labels reused from UC1 (BC3). The workbook filter is "Week Beginning"; Weis reports weeks by their ending
+  // date (prototype review, Nov 3, 2026), so the week is identified as "Week Ending". The id stays 'week'.
   {id: 'todate', label: 'To Date'},
   {id: 'rolling', label: 'Rolling'},
   {id: 'calendar', label: 'Fiscal Calendar'},
-  {id: 'week', label: 'Week Beginning'},
+  {id: 'week', label: 'Week Ending'},
   {id: 'custom', label: 'Custom'},
 ];
 
@@ -359,12 +360,12 @@ function TimeRow() {
         </>
       ) : null}
       {draft.mode === 'week' ? (
-        <Field label="Week Beginning">
+        <Field label="Week Ending">
           {id => (
             <select id={id} value={draft.week} onChange={e => set({week: Number(e.target.value)})}>
               {weeksDesc.map(w => (
                 <option key={w.idx} value={w.idx}>
-                  {usDate(w.start)} · FY{w.fy} W{String(w.week).padStart(2, '0')}
+                  {usDate(w.end)} · FY{w.fy} W{String(w.week).padStart(2, '0')}
                 </option>
               ))}
             </select>

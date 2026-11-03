@@ -16,7 +16,7 @@ export type TimeSelection = {
   rolling: RollingWeeks;
   fy: number;
   unit: CalendarUnit;
-  /** Global week index for "Week beginning". */
+  /** Global week index for "Week Ending" (the Sunday–Saturday week identified by its Saturday). */
   week: number;
   /** ISO dates for a custom date range (snapped to whole weeks). */
   from: string;
@@ -117,7 +117,7 @@ export function resolveTime(t: TimeSelection): ResolvedTime {
     label = t.unit === 'FY' ? `FY${t.fy}` : `FY${t.fy} ${t.unit.startsWith('P') ? 'Period' : 'Quarter'} ${t.unit.slice(1)}`;
   } else if (t.mode === 'week') {
     from = to = Math.max(0, Math.min(LAST_WEEK_IDX, t.week));
-    label = `Week beginning ${usDate(WEEKS[from].start)}`;
+    label = `Week Ending ${usDate(WEEKS[from].end)}`;
   } else {
     if (!t.from || !t.to) return {ok: false, error: 'Enter both dates (MM/DD/YYYY).'};
     if (!ISO_DATE.test(t.from) || !ISO_DATE.test(t.to)) return {ok: false, error: 'Enter valid dates as MM/DD/YYYY.'};

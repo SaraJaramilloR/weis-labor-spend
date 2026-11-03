@@ -14,7 +14,7 @@ import {DecisionChip, EmptyState, IllustrativeChip, InfoTip, PageHeading} from '
 import {VisualCard} from '../components/VisualCard';
 import {DEPARTMENTS, districtById, storeById, storeHasDept, type DeptId} from '../data/org';
 import {INCIDENT_TYPES} from '../data/people';
-import {ATTENDANCE_SOURCE_NOTE, INCIDENT_LABEL} from '../config/attendance';
+import {ATTENDANCE_AVAILABILITY_HELP, ATTENDANCE_AVAILABILITY_NOTE, ATTENDANCE_SOURCE_NOTE, INCIDENT_LABEL} from '../config/attendance';
 import {emptyLabor, rollup, type LaborTotals} from '../lib/aggregate';
 import {ALL} from '../lib/filters';
 import {benchmarkValue, perStoreAverage} from '../lib/benchmark';
@@ -39,7 +39,7 @@ const HELP = {
   otRate: 'Overtime rate, % of payroll dollars. Numerator: overtime $ of all departments except Pharmacy (RX). Denominator: total payroll $ (labor spend) of the same departments, also excluding Pharmacy. Both are dollars, not hours. Ops 100 "OT Less RX Rate" = OT Less RX OT $ / OT Less RX Pay. No 0.5 % status rule is applied (D03).',
   callHrs: 'Call-off hours (draft) = actual hours − projected (scheduled) hours. Ops 100 "Hours vs Proj Ct (Call Off)". A negative value means fewer hours were worked than projected. It is an hours variance, not a count of call-offs or an absence rate (D05).',
   proj: 'Call-off % (draft) = (actual hours − projected hours) / projected hours. Ops 100 "Hours vs Proj % (Call Off)". Not an attendance-based absence rate; the 2 % opportunity flag is not applied (D05).',
-  inc: 'Attendance incidents: count of illustrative associate-level events of the six incident categories listed in workbook R41 (late arrivals "Late In >15", more than half of shift not worked, unpaid absence timecard / exception, no call no show, unpaid sick time). Counted toward the associate home department (D06). The calculation is open (D22); availability after the move to Workday is open (D35).',
+  inc: 'Attendance incidents: count of illustrative associate-level events of the six incident categories listed in workbook R41 (late arrivals "Late In >15", more than half of shift not worked, unpaid absence timecard / exception, no call no show, unpaid sick time). Counted toward the associate home department (D06). The calculation is open (D22). Attendance information is currently available in UKG; its availability following the Workday migration still needs confirmation (D35).',
   avgFt: 'Average weekly hours per full-time associate. Calculated as in the workbook draft (Ops 100 "UKG FT Average Pro Hours"): for each store × department × week, FT hours / active FT associates; then the simple average of those row values (positive values only). Rows are not weighted by headcount, so it is not exactly total FT hours / FT associates (D23).',
   avgPt: 'Average weekly hours per part-time associate. Same method as FT: simple average of store × department × week averages, positive values only (D23).',
   avgCard: 'Workbook "Average hours per employee", calculated as the Ops 100 draft (UKG FT / PT Average Pro Hours): for each store × department × week, hours of the employment type / its active associates; then the simple average of those row values, positive values only. Unit: hours per associate per week, for the weeks in the time frame. Not weighted by headcount (D23).',
@@ -267,6 +267,7 @@ export default function TrackingPage() {
                           <b>{INCIDENT_LABEL[t].label}.</b> {INCIDENT_LABEL[t].help}
                         </span>
                       ))}
+                      <span className="tip-line">{ATTENDANCE_AVAILABILITY_HELP}</span>
                       <span className="tip-line tip-muted">{ATTENDANCE_SOURCE_NOTE}</span>
                     </>
                   }
@@ -286,7 +287,7 @@ export default function TrackingPage() {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <p className="chart-note">Illustrative incident counts by attendance category. Source categories and pending definitions are available in the tooltips.</p>
+            <p className="chart-note">{ATTENDANCE_AVAILABILITY_NOTE} Illustrative incident counts by attendance category. Source categories and pending definitions are available in the tooltips.</p>
           </VisualCard>
         </>
       )}

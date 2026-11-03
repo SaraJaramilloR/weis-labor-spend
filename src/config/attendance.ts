@@ -16,5 +16,9 @@ export const INCIDENT_LABEL: Record<IncidentType, {label: string; help: string}>
   'Sick Unpaid Timecard': {label: 'Unpaid sick time (timecard)', help: `Source category "Sick Unpaid Timecard" (workbook R41). ${TIMECARD_NOTE}`},
 };
 
+/** Visible note: attendance stays in the proposed view; the data dependency is stated, not resolved (D35). */
+export const ATTENDANCE_AVAILABILITY_NOTE = 'Attendance reporting is included in the proposed view. Data availability following the Workday migration is pending confirmation.';
+export const ATTENDANCE_AVAILABILITY_HELP = 'Attendance information is currently available in UKG. Its availability following the Workday migration still needs confirmation (D35).';
+
 export const ATTENDANCE_SOURCE_NOTE =
-  'Categories as listed in workbook R41 (attendance data comes from UKG); no supplied OPS report carries attendance categories. R41 also lists "Worked Shift - Daily Total" and "Scheduled Hours - Daily Total", which are totals rather than incidents and are not counted. Counts are illustrative synthetic events; the calculation (D22) and source availability after the move from UKG to Workday (D35) are open.';
+  'Categories as listed in workbook R41 (attendance data comes from UKG); no supplied OPS report carries attendance categories. R41 also lists "Worked Shift - Daily Total" and "Scheduled Hours - Daily Total", which are totals rather than incidents and are not counted. Counts are illustrative synthetic events; the calculation (D22) and data availability following the Workday migration (D35) are pending confirmation.';

@@ -1,8 +1,8 @@
 import {describe, expect, it} from 'vitest';
-import {LAST_WEEK_IDX} from '../data/calendar';
+import {LAST_WEEK_IDX, WEEKS} from '../data/calendar';
 import {STORES} from '../data/org';
 import {csvCell, toCsv} from './csv';
-import {parseUsDate, shortDay, usDate} from './format';
+import {fmt, parseUsDate, shortDay, usDate} from './format';
 import {DEFAULT_FILTERS, firstCompWeek, isIdStore, resolveTime, sanitizeFilters, storeScope, storesForRole, type Filters} from './filters';
 import {peopleRollup, peopleTotal, type PeopleFilter} from './peopleMetrics';
 
@@ -127,5 +127,28 @@ describe('US date display (MM/DD/YYYY)', () => {
     expect(r.ok && r.detail.startsWith('09/27/2026 – 10/24/2026')).toBe(true);
     const bad = resolveTime({...DEFAULT_FILTERS.time, mode: 'custom', from: '24/10/2026', to: '2026-10-24'});
     expect(bad.ok ? '' : bad.error).toBe('Enter valid dates as MM/DD/YYYY.');
+  });
+});
+
+describe('Week Ending identifies the Sunday–Saturday reporting week', () => {
+  it('labels the week by its Saturday and keeps the same underlying week', () => {
+    const r = resolveTime({...DEFAULT_FILTERS.time, mode: 'week', week: LAST_WEEK_IDX});
+    expect(r.ok && r.label).toBe('Week Ending 10/24/2026');
+    expect(r.ok && [r.from, r.to]).toEqual([LAST_WEEK_IDX, LAST_WEEK_IDX]);
+    expect(r.ok && r.detail).toBe('10/18/2026 – 10/24/2026 · FY2026 W43');
+    expect(WEEKS[LAST_WEEK_IDX].start).toBe('2026-10-18');
+    expect(WEEKS[LAST_WEEK_IDX].end).toBe('2026-10-24');
+  });
+});
+
+describe('percentage-point differences', () => {
+  it('one decimal, sign from the rounded value, rounded negative zero reads 0.0 pp, null stays n/a', () => {
+    expect(fmt.pp(0.016, 1)).toBe('+1.6 pp');
+    expect(fmt.pp(-0.0004, 1)).toBe('0.0 pp');
+    expect(fmt.pp(-0, 1)).toBe('0.0 pp');
+    expect(fmt.pp(0, 1)).toBe('0.0 pp');
+    expect(fmt.pp(-0.0123, 1)).toBe('−1.2 pp');
+    expect(fmt.pp(null, 1)).toBe('n/a');
+    expect(fmt.pct(0.03456, 2)).toBe('3.46%');
   });
 });

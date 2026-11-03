@@ -12,7 +12,7 @@ export const HOURS_REF_OPTIONS: {id: HoursRef; label: string}[] = [
 export const hoursRefName = (r: HoursRef) => (r === 'mdoc' ? 'MDoc' : 'Budget');
 
 export const HOURS_REF_HELP =
-  'Applies to labor hours only (cards, table, chart and variances). Budget: budgeted hours (SO 1007), the primary comparison. MDoc (Master Doc): the operational target hours stores are asked to follow; it is not the formal Budget. Labor spend and other measures stay compared with Budget. Which reference UC5 uses for hours is open (D01).';
+  'Applies to labor hours only (cards, table, chart and variances). Budget: budgeted hours (SO 1007), the primary comparison. MDoc (Master Doc): the operational target hours stores are asked to follow; it is not the formal Budget. The two are separate sources: daily Budget hours do not necessarily add up to MDoc hours, so their totals can differ. Labor spend and other measures stay compared with Budget. Which reference UC5 uses for hours is open (D01).';
 
 export const HOURS_BUDGET_HELP = 'Budgeted labor hours (SO 1007), the formal Budget. Which reference UC5 uses for hours is open (D01).';
 export const HOURS_MDOC_HELP =

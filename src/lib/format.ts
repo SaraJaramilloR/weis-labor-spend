@@ -33,7 +33,12 @@ export const fmt = {
   pct: (v: number | null | undefined, digits = 1) => (ok(v) ? `${(v * 100).toFixed(digits)}%` : NA),
   signedPct: (v: number | null | undefined, digits = 1) => (ok(v) ? `${sign(Math.round(v * 10 ** (digits + 2)))}${Math.abs(v * 100).toFixed(digits)}%` : NA),
   /** Rate difference in percentage points; input is a fraction (0.004 → "+0.40 pp"). */
-  pp: (v: number | null | undefined, digits = 2) => (ok(v) ? `${sign(Math.round(v * 10 ** (digits + 2)))}${Math.abs(v * 100).toFixed(digits)} pp` : NA),
+  /** Percentage points; the sign comes from the rounded value, so a rounded negative zero reads "0.0 pp". */
+  pp: (v: number | null | undefined, digits = 2) => {
+    if (!ok(v)) return NA;
+    const r = Number((v * 100).toFixed(digits));
+    return `${sign(r)}${Math.abs(r).toFixed(digits)} pp`;
+  },
   dec1: (v: number | null | undefined) => (ok(v) ? one.format(v) : NA),
   dec2: (v: number | null | undefined) => (ok(v) ? two.format(v) : NA),
   signedDec1: (v: number | null | undefined) => (ok(v) ? `${sign(Math.round(v * 10))}${one.format(Math.abs(v))}` : NA),

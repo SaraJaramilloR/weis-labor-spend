@@ -51,7 +51,7 @@ describe('AIV history (OPS111 measures)', () => {
 });
 
 describe('hours references and overtime rate', () => {
-  it('daily MDoc and Budget hours both reconcile with the week and stay distinct', () => {
+  it('daily Budget and MDoc hours each reconcile with their own weekly source; Budget is never forced to equal MDoc', () => {
     const w = LAST_WEEK_IDX;
     const days = DAILY_FACTS.filter(f => f.w === w);
     const week = total(all, 'All', w, w).labor;

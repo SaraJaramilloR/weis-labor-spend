@@ -88,7 +88,7 @@ export function AivHistory({scope}: {scope: Scope}) {
       key: sc,
       header: sc,
       sub: isAiv ? `AIV TY · ${refLabel} below` : `vs ${refLabel}`,
-      help: `${SCOPE_LABEL[sc]}, through the week ending ${usDate(WEEKS[anchor].end)}. ${AIV_HELP.scopes}`,
+      help: `${SCOPE_LABEL[sc]}, through Week Ending ${usDate(WEEKS[anchor].end)}. ${AIV_HELP.scopes}`,
       value: (r: Row) => measureValue(r.byScope[sc], measure, cmp),
       render: (r: Row) =>
         isAiv ? (
@@ -137,7 +137,7 @@ export function AivHistory({scope}: {scope: Scope}) {
         />
       </div>
       <p className="table-scope">
-        <b>Rolling {windowWeeks} weeks</b>, weekly points, ending the week of {usDate(WEEKS[hTo].end)} (the last week of the selected time frame{windowWeeks < 52 ? '; synthetic data starts FY2025 W01' : ''}) · {selectedName} · {measureLabel}
+        <b>Rolling {windowWeeks} weeks</b>, weekly points, through Week Ending {usDate(WEEKS[hTo].end)} (the last week of the selected time frame{windowWeeks < 52 ? '; synthetic data starts FY2025 W01' : ''}) · {selectedName} · {measureLabel}
         {isAiv ? ` · TY and ${refLabel}` : ` vs ${refLabel}`}
       </p>
       <ChartKey items={isAiv ? [{label: 'AIV TY', color: C.actual, kind: 'line'}, {label: `AIV ${refLabel}`, color: refColor, kind: cmp === 'ly' ? 'line' : 'dash'}] : [{label: `${measureLabel} vs ${refLabel}`, color: C.actual, kind: measure === 'infPct' ? 'line' : 'bar'}]} />
@@ -155,7 +155,7 @@ export function AivHistory({scope}: {scope: Scope}) {
                 if (!p) return null;
                 return (
                   <TipBox
-                    title={`${p.label} · week ending ${usDate(p.end)}`}
+                    title={`${p.label} · Week Ending ${usDate(p.end)}`}
                     rows={[
                       {label: 'AIV TY', value: fmt.money2(p.actual), swatch: C.actual},
                       {label: `AIV ${refLabel}`, value: fmt.money2(p.ref), swatch: isAiv ? refColor : undefined},

@@ -41,12 +41,14 @@ type TableGroup = 'movements' | 'turnover' | 'retention';
 type Kpi = 'turnover' | 'retention';
 
 const LEVEL_NAME: Record<Level, string> = {chain: 'Chain', region: 'Region', district: 'District', store: 'Store'};
-const NA_SPANS = 'This row spans several regions, so it has no single region benchmark.';
-const NA_IS_REGION = 'This row is the whole benchmark population of its region: compare it with the chain.';
-const NA_IS_CHAIN = 'This row is the whole chain benchmark population, so a difference vs Chain is not meaningful.';
+const NA_SPANS = 'This row spans several regions, so there is no single regional benchmark.';
+// Self-comparisons: a row that is the whole benchmark population of its region (or of the chain) is compared with
+// itself, so the reference is the row's own rate and the difference is 0.0 pp instead of an n/a that reads as missing.
+const SELF_REGION = "This row is the region itself (its whole benchmark population): the region reference is the row's own rate, so the difference is 0.0 pp.";
+const SELF_CHAIN = "This row is the whole chain benchmark population: the chain reference is the row's own rate, so the difference is 0.0 pp.";
 
 const diffHelp = (kpi: Kpi, vs: 'Region' | 'Chain') =>
-  `Row ${kpi} rate minus the ${vs === 'Region' ? "row's region" : 'chain'} ${kpi} benchmark, in percentage points (pp). A positive value means higher ${kpi} than the ${vs.toLowerCase()} benchmark. Example: ${kpi === 'turnover' ? '7.5% − 3.7%' : '97.5% − 93.7%'} = +3.8 percentage points. ${PP} n/a: ${vs === 'Region' ? `${NA_SPANS} Or: ${NA_IS_REGION}` : NA_IS_CHAIN}`;
+  `Row ${kpi} rate minus the ${vs === 'Region' ? "row's regional" : 'chain'} ${kpi} reference, in percentage points (pp), calculated from unrounded rates and shown to one decimal. A positive value means higher ${kpi} than the ${vs === 'Region' ? 'region' : 'chain'}. Example: ${kpi === 'turnover' ? `Store turnover of 5.0% minus ${vs === 'Region' ? 'regional' : 'chain'} turnover of 3.4% equals +1.6 percentage points.` : `Store retention of 92.0% minus ${vs === 'Region' ? 'regional' : 'chain'} retention of 90.5% equals +1.5 percentage points.`} ${PP} ${vs === 'Region' ? `0.0 pp on a Region row: ${SELF_REGION} n/a on the Chain row: ${NA_SPANS}` : `0.0 pp on the Chain row: ${SELF_CHAIN}`} n/a also when a rate is undefined (no headcount).`;
 
 export default function BenchmarkPage() {
   const scope = useScope('benchmark');
@@ -95,7 +97,7 @@ export default function BenchmarkPage() {
   const regionBench = (r: Row): {b: Benchmark | null; why: string} => {
     const ref = refFor(r);
     if (ref.regionId) return {b: bench.region.get(ref.regionId) ?? null, why: ''};
-    return {b: null, why: singleRegion(r.storeIds) ? NA_IS_REGION : NA_SPANS};
+    return {b: null, why: singleRegion(r.storeIds) ? SELF_REGION : NA_SPANS};
   };
 
   const benchNote = `Benchmarks: chain = all stores in the benchmark population; region = the stores of the row's region. They ignore Region / District / Store filters and the table search, and keep the time frame and people filters (assumption, D13). Rates: ${methodLabel}; counts: average per store.`;
@@ -160,7 +162,7 @@ export default function BenchmarkPage() {
           >
             <DataTable
               rows={[chainRow]}
-              columns={tableColumns(group, bench, regionBench, refFor)}
+              columns={tableColumns(group, bench, regionBench, refFor, methodLabel)}
               rowKey={r => r.id}
               label="People metrics and benchmarks by chain, region, district and store"
               searchText={r => r.search}
@@ -194,7 +196,7 @@ function CountCell({value, stores, region, chain, label}: {value: number; stores
   return <span title={title}>{fmt.int(value)}</span>;
 }
 
-function tableColumns(group: TableGroup, bench: {chain: Benchmark; region: Map<string, Benchmark>}, regionBench: (r: Row) => {b: Benchmark | null; why: string}, refFor: (r: Row) => {regionId: string | null; showChain: boolean}): Column<Row>[] {
+function tableColumns(group: TableGroup, bench: {chain: Benchmark; region: Map<string, Benchmark>}, regionBench: (r: Row) => {b: Benchmark | null; why: string}, refFor: (r: Row) => {regionId: string | null; showChain: boolean}, methodName: string): Column<Row>[] {
   const nameCol: Column<Row> = {key: 'name', header: 'Chain › Region › District › Store', value: r => r.name, render: r => <>{r.name}<span className="cell-sub">{r.sub}</span></>, align: 'left'};
   if (group === 'movements') {
     const count = (k: 'begin' | 'end' | 'hires' | 'terms', label: string) => (r: Row) => <CountCell value={r.p[k]} stores={r.storeIds.length} region={regionBench(r).b?.[k] ?? null} chain={bench.chain[k]} label={label} />;
@@ -211,21 +213,28 @@ function tableColumns(group: TableGroup, bench: {chain: Benchmark; region: Map<s
   const kpi: Kpi = group;
   const name = kpi === 'turnover' ? 'Turnover' : 'Retention';
   const own = (r: Row) => (kpi === 'turnover' ? turnoverOf(r.p) : retentionOf(r.p));
-  const reg = (r: Row) => regionBench(r).b?.[kpi] ?? null;
   const chainV = bench.chain[kpi];
+  // Regional reference: the region benchmark; the row's own rate when the row is the region itself; null (n/a) when
+  // the row spans several regions. Chain reference: the chain benchmark, or the row's own rate on the chain row.
+  const regionSelf = (r: Row) => !regionBench(r).b && singleRegion(r.storeIds) !== null;
+  const chainSelf = (r: Row) => !refFor(r).showChain;
+  const reg = (r: Row) => (regionSelf(r) ? own(r) : (regionBench(r).b?.[kpi] ?? null));
+  const chn = (r: Row) => (chainSelf(r) ? own(r) : chainV);
+  const self = (why: string, text: string) => <span title={why}>{text}</span>;
   const na = (why: string) => (
     <span className="na" title={why}>
       n/a<span className="sr-only"> ({why})</span>
     </span>
   );
   const g = `${name} rate`;
+  const rate2 = (v: number | null) => fmt.pct(v, 2);
   return [
     nameCol,
-    {key: `own-${kpi}`, header: `${name} (%)`, help: kpi === 'turnover' ? "The row's terminations / its average headcount ((beginning + ending) / 2) in the time frame, recalculated from the row's totals. Not annualized. Draft until OPS 201 is reviewed (D12)." : "(The row's beginning headcount − terminations of those associates) / its beginning headcount, recalculated from the row's totals. Cohort-based draft; not 1 − turnover (D27).", value: own, render: r => fmt.pct(own(r)), group: g},
-    {key: `region-${kpi}`, header: `Region ${name} (%)`, help: `${name} benchmark of the row's region (rule open, D13). n/a: ${NA_SPANS} Or: ${NA_IS_REGION}`, value: reg, render: r => (regionBench(r).b ? fmt.pct(reg(r)) : na(regionBench(r).why)), group: g},
-    {key: `chain-${kpi}`, header: `Chain ${name} (%)`, help: `${name} benchmark of the chain (rule open, D13). Same value on every row.`, value: () => chainV, render: () => fmt.pct(chainV), group: g},
-    {key: `diffRegion-${kpi}`, header: 'Difference vs Region (pp)', help: diffHelp(kpi, 'Region'), value: r => ppDiff(own(r), reg(r)), render: r => (regionBench(r).b ? fmt.pp(ppDiff(own(r), reg(r)), 1) : na(regionBench(r).why)), group: g},
-    {key: `diffChain-${kpi}`, header: 'Difference vs Chain (pp)', help: diffHelp(kpi, 'Chain'), value: r => (refFor(r).showChain ? ppDiff(own(r), chainV) : null), render: r => (refFor(r).showChain ? fmt.pp(ppDiff(own(r), chainV), 1) : na(NA_IS_CHAIN)), group: g},
+    {key: `own-${kpi}`, header: `${name} (%)`, help: `${kpi === 'turnover' ? "The row's own rate: terminations / average headcount ((beginning + ending) / 2) in the time frame, recalculated from the row's totals. Not annualized. Draft until OPS 201 is reviewed (D12)." : "The row's own rate: (beginning headcount − terminations of those associates) / beginning headcount, recalculated from the row's totals. Cohort-based draft; not 1 − turnover (D27)."} Shown to two decimals.`, value: own, render: r => rate2(own(r)), group: g},
+    {key: `region-${kpi}`, header: `Region ${name} (%)`, help: `Regional reference: the ${kpi} benchmark of the row's region (${methodName}; rule open, D13), shown to two decimals. On a Region row: ${SELF_REGION} On the Chain row: n/a. ${NA_SPANS}`, value: reg, render: r => (regionSelf(r) ? self(SELF_REGION, rate2(reg(r))) : regionBench(r).b ? rate2(reg(r)) : na(regionBench(r).why)), group: g},
+    {key: `chain-${kpi}`, header: `Chain ${name} (%)`, help: `Chain reference: the ${kpi} benchmark of the chain (${methodName}; rule open, D13), shown to two decimals. Same value on every row; on the Chain row: ${SELF_CHAIN}`, value: chn, render: r => (chainSelf(r) ? self(SELF_CHAIN, rate2(chn(r))) : rate2(chn(r))), group: g},
+    {key: `diffRegion-${kpi}`, header: 'Difference vs Region (pp)', help: diffHelp(kpi, 'Region'), value: r => ppDiff(own(r), reg(r)), render: r => (regionSelf(r) ? self(SELF_REGION, fmt.pp(ppDiff(own(r), reg(r)), 1)) : regionBench(r).b ? fmt.pp(ppDiff(own(r), reg(r)), 1) : na(regionBench(r).why)), group: g},
+    {key: `diffChain-${kpi}`, header: 'Difference vs Chain (pp)', help: diffHelp(kpi, 'Chain'), value: r => ppDiff(own(r), chn(r)), render: r => (chainSelf(r) ? self(SELF_CHAIN, fmt.pp(ppDiff(own(r), chn(r)), 1)) : fmt.pp(ppDiff(own(r), chn(r)), 1)), group: g},
   ];
 }
 

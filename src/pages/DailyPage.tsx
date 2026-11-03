@@ -92,18 +92,18 @@ export default function DailyPage() {
   ];
 
   const chartRows = [...byDay.entries()].map(([d, t]) => ({day: Number(d), label: shortDay(addDays(info.start, Number(d))), hours: t.hours, ref: rh(t), pay: t.pay, payRef: rp(t)})).sort((a, b) => a.day - b.day);
-  const dayLabel = day === 'all' ? `Week beginning ${usDate(info.start)}` : `${DAY_NAMES[day]} ${usDate(addDays(info.start, day))}`;
+  const dayLabel = day === 'all' ? `Week Ending ${usDate(info.end)}` : `${DAY_NAMES[day]} ${usDate(addDays(info.start, day))}`;
 
   return (
     <div className="page">
       <PageHeading eyebrow={META.eyebrow} title={META.name} question={META.question} />
       <div className="local-controls" role="group" aria-label="Day selection">
         <div className="fb-field">
-          <label htmlFor={weekId}>Week beginning</label>
+          <label htmlFor={weekId}>Week Ending</label>
           <select id={weekId} value={week} onChange={e => setWeek(Number(e.target.value))}>
             {WEEK_OPTIONS.map(w => (
               <option key={w.idx} value={w.idx}>
-                {usDate(w.start)} · FY{w.fy} W{String(w.week).padStart(2, '0')}
+                {usDate(w.end)} · FY{w.fy} W{String(w.week).padStart(2, '0')}
                 {w.idx === LAST_WEEK_IDX ? ' · last completed week' : ''}
               </option>
             ))}
@@ -127,7 +127,7 @@ export default function DailyPage() {
           <Segmented label="Compare labor hours with" value={hoursRef} options={HOURS_REF_OPTIONS} onChange={setHoursRef} size="sm" />
         </div>
         <p className="note">
-          Defaults to the last completed week; the 7 earlier weeks stay available. Primary comparison: Budget. <DecisionChip ids={['D01']} label="Open" align="left" />
+          Defaults to the last completed week; the 7 earlier weeks stay available. Primary comparison: Budget. <DecisionChip ids={['D01']} label="Open" align="left" /> Intended to reflect the Daily Labor Report (Payroll Update); its full layout is pending the reference report. Synthetic data, not refreshed daily. <DecisionChip ids={['D38']} label="Open" align="left" />
           {filters.reference === 'mdoc' ? ' Exploratory: spend vs MDoc (day-level target dollars).' : filters.reference === 'ly' ? ' The exploratory prior-year comparison is not available at day level.' : ''}
         </p>
       </div>
@@ -155,7 +155,7 @@ export default function DailyPage() {
             <KpiCard label={`Hours variance % vs ${hRef}`} value={fmt.signedPct(variancePct(totalT.hours, rh(totalT)))} lines={[{label: 'Spend variance % vs Budget', value: <PctVar actual={totalT.pay} target={rp(totalT)} />}]} />
           </section>
 
-          <VisualCard title={`Daily labor hours vs ${hRef}`} filters={<VisualFilters scope={scope} notes={[`Week beginning ${usDate(info.start)}. The Day selector filters the table and cards; this chart always shows the full week.`]} />}>
+          <VisualCard title={`Daily labor hours vs ${hRef}`} filters={<VisualFilters scope={scope} notes={[`Week Ending ${usDate(info.end)} (${usDate(info.start)} – ${usDate(info.end)}). The Day selector filters the table and cards; this chart always shows the full week.`]} />}>
             <ChartKey items={[{label: 'Actual hours', color: C.actual}, {label: hoursRef === 'mdoc' ? 'MDoc hours (operational target)' : 'Budget hours', color: C.reference, kind: 'line'}]} />
             <div className="chart-h280">
               <ResponsiveContainer width="100%" height="100%">
@@ -176,7 +176,7 @@ export default function DailyPage() {
             filters={<VisualFilters scope={scope} />}
             actions={<Segmented label="Rows" value={groupBy} options={[{id: 'day', label: 'By day'}, {id: 'store', label: 'By store'}, {id: 'dept', label: 'By department'}, {id: 'storeDept', label: 'By store and department'}]} onChange={setGroupBy} size="sm" />}
           >
-            <DataTable rows={rows} columns={columns} rowKey={r => r.id} label="Daily labor vs target" searchText={groupBy === 'day' ? undefined : r => r.name} pinned={[{id: 'total', name: 'Total', t: totalT}]} pinnedLabel={() => 'Total'} initialSort={groupBy === 'day' ? {key: 'name', dir: 'asc'} : {key: 'hoursVar', dir: 'desc'}} exportName={`daily-labor-week-beginning-${usDate(info.start).replaceAll('/', '-')}`} />
+            <DataTable rows={rows} columns={columns} rowKey={r => r.id} label="Daily labor vs target" searchText={groupBy === 'day' ? undefined : r => r.name} pinned={[{id: 'total', name: 'Total', t: totalT}]} pinnedLabel={() => 'Total'} initialSort={groupBy === 'day' ? {key: 'name', dir: 'asc'} : {key: 'hoursVar', dir: 'desc'}} exportName={`daily-labor-week-ending-${usDate(info.end).replaceAll('/', '-')}`} />
           </VisualCard>
 
         </>
