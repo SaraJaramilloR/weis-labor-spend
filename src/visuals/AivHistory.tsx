@@ -1,7 +1,8 @@
 // "History by department" inside the AIV & estimated inflation section of Store Ops Labor Allocation (review request,
 // Speaker 4 20:59–22:39, Speaker 6 22:55; OPS111 is the reference). Placing it here is a design choice. One selected
 // department or the aggregate scope at a time, never one line per department. One measure at a time, so dollars,
-// percentages and AIV never share an axis.
+// percentages and AIV never share an axis. Nov 3 final review (08:41–11:10): LY is what stores use; the Budget comparison
+// stays for leadership budget checks and is labeled AIV Variance, not inflation.
 import {useId, useMemo, useState} from 'react';
 import {Bar, CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import {deptLabel, type Scope} from '../app/useScope';
@@ -18,16 +19,19 @@ import {ANIMATE, AXIS, C, ChartKey, TipBox} from './chartTheme';
 const AIV_HELP = {
   aiv: 'Average Item Value (AIV) = Gross Sales / Items sold, for the same stores, department and weeks.',
   tyly: 'TY = this year. LY = last year: the same fiscal weeks one year earlier (364 days).',
-  infPct: 'Estimated Inflation (%) = (AIV TY − AIV LY) / AIV LY (OPS111 "Avg Item Value % Value vs LY (INF)"). It is an estimate from the change in average item value, so it also moves with product mix, promotions and weighed items; it is not item-level price inflation.',
-  infValue: "Estimated Inflation Dollar Value = (AIV TY − AIV LY) × Items sold TY (OPS111 \"INF $ Value\"): the part of the sales change explained by the change in average item value at this year's volume. An arithmetic split, not a proven price effect.",
+  infPct: 'Estimated Inflation (% vs LY) = (AIV TY / AIV LY) − 1 (OPS111 "Avg Item Value % Value vs LY (INF)"). Each week, and each LW / PTD / QTD / YTD column, is compared with the same fiscal weeks last year: it is not an annual rate unless the span covers a full year. It is an estimate from the change in average item value, so it also reflects product mix, promotions and weighed items; it is not item-level price inflation.',
+  infValue: "Estimated Inflation ($ vs LY) = (AIV TY − AIV LY) × Items sold TY (OPS111 \"INF $ Value\"): the part of the sales change explained by the change in average item value at this year's volume. An arithmetic split, not a proven price effect.",
+  varPct: 'AIV Variance (% vs Budget) = (AIV TY / AIV Budget) − 1, where AIV Budget = Sales Budget / Items Budget (OPS111 Dept_Bud, INFvsBud_Trend). It shows whether items were budgeted at the right average value, a leadership budget check (final review, 10:20–11:10). It is not observed year-over-year inflation.',
+  varValue: 'AIV Variance ($ vs Budget) = (AIV TY − AIV Budget) × Items sold TY (Ops 100 "$ Value vs Bud (INF)"). A budget check, not observed inflation.',
   scopes: 'LW = last week of the selected time frame. PTD = period to date, QTD = quarter to date, YTD = year to date: from the start of that fiscal period, quarter or year to the same week (OPS111 Last Week, Period / Quarter / Year to Date).',
-  budget: 'Budget comparison: AIV Budget = Sales Budget / Items Budget (OPS111 Dept_Bud and INFvsBud_Trend). An additional comparison supported by OPS111, not an individually approved client request; the Budget vs MDoc reference is open (D01).',
+  budget: 'Budget comparison: AIV Budget = Sales Budget / Items Budget (OPS111 Dept_Bud and INFvsBud_Trend). Kept for leadership budget checks, as confirmed in the final review; stores primarily use LY.',
 } as const;
 
-const MEASURES: {id: AivMeasure; label: string}[] = [
+/** Measure names change with the comparison: vs LY is an inflation estimate; vs Budget is an AIV variance. */
+const measuresFor = (cmp: AivCompare): {id: AivMeasure; label: string}[] => [
   {id: 'aiv', label: 'Average Item Value'},
-  {id: 'infPct', label: 'Estimated Inflation (%)'},
-  {id: 'infValue', label: 'Estimated Inflation ($)'},
+  {id: 'infPct', label: cmp === 'ly' ? 'Estimated Inflation (% vs LY)' : 'AIV Variance (% vs Budget)'},
+  {id: 'infValue', label: cmp === 'ly' ? 'Estimated Inflation ($ vs LY)' : 'AIV Variance ($ vs Budget)'},
 ];
 const SCOPE_LABEL: Record<AivScope, string> = {LW: 'Last week (LW)', PTD: 'Period to date (PTD)', QTD: 'Quarter to date (QTD)', YTD: 'Year to date (YTD)'};
 
@@ -53,7 +57,8 @@ export function AivHistory({scope}: {scope: Scope}) {
   const [hFrom, hTo] = historyRange(anchor);
   const refLabel = cmp === 'ly' ? 'LY' : 'Budget';
   const isAiv = measure === 'aiv';
-  const measureLabel = MEASURES.find(m => m.id === measure)!.label;
+  const measures = measuresFor(cmp);
+  const measureLabel = measures.find(m => m.id === measure)!.label;
 
   const weekly = useMemo(() => rollup(scope.stores, dept, hFrom, hTo, 'week'), [scope.stores, dept, hFrom, hTo]);
   const points = useMemo(
@@ -111,8 +116,8 @@ export function AivHistory({scope}: {scope: Scope}) {
   return (
     <div className="aiv-history">
       <div className="aiv-controls">
-        <Segmented label="Measure" value={measure} options={MEASURES} onChange={setMeasure} size="sm" />
-        <Segmented label="Compare with" value={cmp} options={[{id: 'ly', label: 'vs LY'}, {id: 'budget', label: 'vs Budget (OPS111)'}]} onChange={setCmp} size="sm" />
+        <Segmented label="Measure" value={measure} options={measures} onChange={setMeasure} size="sm" />
+        <Segmented label="Compare with" value={cmp} options={[{id: 'ly', label: 'vs LY'}, {id: 'budget', label: 'vs Budget'}]} onChange={setCmp} size="sm" />
         <div className="fb-field">
           <label htmlFor={deptId}>Department</label>
           <select id={deptId} value={locked ? scope.dept : localDept} disabled={locked} onChange={e => setLocalDept(e.target.value as 'all' | DeptId)}>
@@ -131,16 +136,16 @@ export function AivHistory({scope}: {scope: Scope}) {
           label="About AIV history"
           text={
             <>
-              {AIV_HELP.aiv} {AIV_HELP.tyly} {AIV_HELP.infPct} {AIV_HELP.infValue} {cmp === 'budget' ? AIV_HELP.budget : ''} Inflation never adjusts labor measures or sales growth.
+              {AIV_HELP.aiv} {AIV_HELP.tyly} {cmp === 'ly' ? `${AIV_HELP.infPct} ${AIV_HELP.infValue}` : `${AIV_HELP.varPct} ${AIV_HELP.varValue} ${AIV_HELP.budget}`} Neither measure adjusts labor spend, labor hours, Labor Rate, IPLH or sales growth.
             </>
           }
         />
       </div>
       <p className="table-scope">
         <b>Rolling {windowWeeks} weeks</b>, weekly points, through Week Ending {usDate(WEEKS[hTo].end)} (the last week of the selected time frame{windowWeeks < 52 ? '; synthetic data starts FY2025 W01' : ''}) · {selectedName} · {measureLabel}
-        {isAiv ? ` · TY and ${refLabel}` : ` vs ${refLabel}`}
+        {isAiv ? ` · TY and ${refLabel}` : ''}
       </p>
-      <ChartKey items={isAiv ? [{label: 'AIV TY', color: C.actual, kind: 'line'}, {label: `AIV ${refLabel}`, color: refColor, kind: cmp === 'ly' ? 'line' : 'dash'}] : [{label: `${measureLabel} vs ${refLabel}`, color: C.actual, kind: measure === 'infPct' ? 'line' : 'bar'}]} />
+      <ChartKey items={isAiv ? [{label: 'AIV TY', color: C.actual, kind: 'line'}, {label: `AIV ${refLabel}`, color: refColor, kind: cmp === 'ly' ? 'line' : 'dash'}] : [{label: measureLabel, color: C.actual, kind: measure === 'infPct' ? 'line' : 'bar'}]} />
       <div className="chart-h280">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={points} margin={{top: 8, right: 12, left: 8, bottom: 0}} accessibilityLayer>
@@ -159,10 +164,10 @@ export function AivHistory({scope}: {scope: Scope}) {
                     rows={[
                       {label: 'AIV TY', value: fmt.money2(p.actual), swatch: C.actual},
                       {label: `AIV ${refLabel}`, value: fmt.money2(p.ref), swatch: isAiv ? refColor : undefined},
-                      ...(isAiv ? [] : [{label: `${measureLabel} vs ${refLabel}`, value: fmtMeasure(p.value)}]),
+                      ...(isAiv ? [] : [{label: measureLabel, value: fmtMeasure(p.value)}]),
                       {label: 'Items sold TY', value: fmt.int(p.items)},
                     ]}
-                    note="Estimate from the change in average item value; it also reflects product mix."
+                    note={cmp === 'ly' ? 'Same fiscal week last year. Estimate from the change in average item value; it also reflects product mix.' : 'Budget check: AIV vs budgeted AIV. Not observed inflation.'}
                   />
                 );
               }}
@@ -181,10 +186,10 @@ export function AivHistory({scope}: {scope: Scope}) {
         </ResponsiveContainer>
       </div>
       <p className="chart-note">
-        {isAiv ? 'AIV axis starts near the data range, not at zero.' : 'Zero line = no change in average item value.'} Exact values in the tooltip. {locked ? 'Department fixed by the page Department filter.' : 'Select a department row below (or use Department) to show its history; select it again for all departments.'}
+        {isAiv ? 'AIV axis starts near the data range, not at zero.' : cmp === 'ly' ? 'Zero line = no change in average item value vs the same week last year.' : 'Zero line = AIV equal to budgeted AIV.'} Exact values in the tooltip. {locked ? 'Department fixed by the page Department filter.' : 'Select a department row below (or use Department) to show its history; select it again for all departments.'}
       </p>
       <h3 className="sub-heading">
-        Department summary · {measureLabel} {isAiv ? `(TY, ${refLabel} below)` : `vs ${refLabel}`} <InfoTip text={AIV_HELP.scopes} label="About LW, PTD, QTD and YTD" align="left" />
+        Time summary by department · {measureLabel} {isAiv ? `(TY, ${refLabel} below)` : ''} <InfoTip text={AIV_HELP.scopes} label="About LW, PTD, QTD and YTD" align="left" />
       </h3>
       <DataTable
         rows={rows}

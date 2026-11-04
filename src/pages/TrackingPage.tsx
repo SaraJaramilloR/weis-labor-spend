@@ -15,11 +15,14 @@ import {VisualCard} from '../components/VisualCard';
 import {DEPARTMENTS, districtById, storeById, storeHasDept, type DeptId} from '../data/org';
 import {INCIDENT_TYPES} from '../data/people';
 import {ATTENDANCE_AVAILABILITY_HELP, ATTENDANCE_AVAILABILITY_NOTE, ATTENDANCE_SOURCE_NOTE, INCIDENT_LABEL} from '../config/attendance';
+import {OT_DEPT_HOURS_HELP, OT_DEPT_PAY_HELP, OT_DEPT_RATE_HELP, OT_HOURS_HELP, OT_PAY_HELP, OT_RATE_HELP} from '../config/references';
+import {TURNOVER_DRAFT_HELP} from '../config/turnover';
 import {emptyLabor, rollup, type LaborTotals} from '../lib/aggregate';
 import {ALL} from '../lib/filters';
 import {benchmarkValue, perStoreAverage} from '../lib/benchmark';
 import {attendanceRollup, averageProHours, averageProHoursBy, laborForPeople, peopleFilterActive} from '../lib/laborPeople';
 import {fmt} from '../lib/format';
+import {operationalLabor} from '../lib/overtime';
 import {headcountShare, otRate, turnoverRate, variancePct} from '../lib/metrics';
 import {emptyPeople, peopleRollup, type PeopleTotals} from '../lib/peopleMetrics';
 import {ANIMATE, AXIS, C, TipBox} from '../visuals/chartTheme';
@@ -28,17 +31,20 @@ const META = pageById.get('tracking')!;
 
 /** Card and column tooltips: full name, meaning, formula, unit, time frame and limitations. */
 const HELP = {
-  turnover: 'Turnover rate, % = Terminations / average headcount, average headcount = (beginning + ending headcount) / 2, for the selected time frame. Draft until OPS 201 is reviewed (D12).',
+  turnover: `Turnover rate, % = ${TURNOVER_DRAFT_HELP}`,
   terms: 'Terminations: number of associates whose employment ended in the time frame (count of events).',
   hires: 'Hires: number of associates hired in the time frame (count of events). Independent of terminations; not a ratio.',
   begin: 'Beginning headcount: active associates the day before the time frame starts (snapshot).',
   end: 'Ending headcount: active associates on the last day of the time frame (snapshot). Ending = Beginning + Hires − Terminations for the same population.',
   ft: 'Full-time share of ending headcount, % = FT associates / (FT + PT associates). Headcount based, not hours. The part-time share is 100 % minus this value.',
-  otPay: 'Overtime (OT) $: overtime pay, excluding Pharmacy (RX). Whether the source field is the full overtime pay or only the premium is open (D04).',
-  otHrs: 'Overtime (OT) hours worked, excluding Pharmacy (RX).',
-  otRate: 'Overtime rate, % of payroll dollars. Numerator: overtime $ of all departments except Pharmacy (RX). Denominator: total payroll $ (labor spend) of the same departments, also excluding Pharmacy. Both are dollars, not hours. Ops 100 "OT Less RX Rate" = OT Less RX OT $ / OT Less RX Pay. No 0.5 % status rule is applied (D03).',
-  callHrs: 'Call-off hours (draft) = actual hours − projected (scheduled) hours. Ops 100 "Hours vs Proj Ct (Call Off)". A negative value means fewer hours were worked than projected. It is an hours variance, not a count of call-offs or an absence rate (D05).',
-  proj: 'Call-off % (draft) = (actual hours − projected hours) / projected hours. Ops 100 "Hours vs Proj % (Call Off)". Not an attendance-based absence rate; the 2 % opportunity flag is not applied (D05).',
+  otPay: OT_PAY_HELP,
+  otHrs: OT_HOURS_HELP,
+  otRate: `${OT_RATE_HELP} The OPS102 0.5 % opportunity flag is not applied (D03).`,
+  dOtPay: OT_DEPT_PAY_HELP,
+  dOtHrs: OT_DEPT_HOURS_HELP,
+  dOtRate: OT_DEPT_RATE_HELP,
+  callHrs: 'Call-off hours = actual hours − projected (scheduled) hours: the Ops 100 expression "Hours vs Proj Ct (Call Off)" (OPS101, OPS109), reproduced exactly. A signed hours variance: a negative value means fewer hours were worked than projected. It is not a count of call-offs, not attendance incidents and not an absence rate; partial-absence rules are not defined (D05).',
+  proj: 'Call-off % = (actual hours − projected hours) / projected hours: the Ops 100 expression "Hours vs Proj % (Call Off)" (OPS101, OPS102, OPS109), reproduced exactly. A signed hours variance, not an attendance-based absence rate (D05). The OPS102 2 % opportunity flag is not applied.',
   inc: 'Attendance incidents: count of illustrative associate-level events of the six incident categories listed in workbook R41 (late arrivals "Late In >15", more than half of shift not worked, unpaid absence timecard / exception, no call no show, unpaid sick time). Counted toward the associate home department (D06). The calculation is open (D22). Attendance information is currently available in UKG; its availability following the Workday migration still needs confirmation (D35).',
   avgFt: 'Average weekly hours per full-time associate. Calculated as in the workbook draft (Ops 100 "UKG FT Average Pro Hours"): for each store × department × week, FT hours / active FT associates; then the simple average of those row values (positive values only). Rows are not weighted by headcount, so it is not exactly total FT hours / FT associates (D23).',
   avgPt: 'Average weekly hours per part-time associate. Same method as FT: simple average of store × department × week averages, positive values only (D23).',
@@ -46,12 +52,16 @@ const HELP = {
   vac: 'Vacation hours: total in the time frame for the stores, departments and associates in scope; shown separately from actual hours (D17). Weekly data: a custom range is reported as whole weeks.',
 } as const;
 
-/** A store row (dept = null) or one department of a store. `children`: department rows of a store in scope. */
-type StoreRow = {id: string; name: string; district: string; dept: DeptId | null; p: PeopleTotals; l: LaborTotals; incidents: number; pro: {ft: number | null; pt: number | null}; children: StoreRow[]};
+/** A store row (dept = null) or one department of a store. `children`: department rows of a store in scope. `l`: labor
+ *  in the department context (row and Department filter). `op`: operational overtime components (all departments
+ *  except Pharmacy, the Ops 100 Less RX scope); null on department rows, which show only the department context. */
+type StoreRow = {id: string; name: string; district: string; dept: DeptId | null; p: PeopleTotals; l: LaborTotals; op: LaborTotals | null; incidents: number; pro: {ft: number | null; pt: number | null}; children: StoreRow[]};
 
 const turnover = (r: StoreRow) => turnoverRate(r.p.terms, r.p.begin, r.p.end);
 const ftShare = (r: StoreRow) => headcountShare(r.p.ftEnd, r.p.ftEnd, r.p.ptEnd);
-const ot = (r: StoreRow) => otRate(r.l.otPay, r.l.otBasePay);
+/** Operational Overtime Rate (Ops 100 OT_Less_RX_Rate_TY) and the department-context rate. */
+const ot = (r: StoreRow) => (r.op ? otRate(r.op.otPay, r.op.otBasePay) : null);
+const dOt = (r: StoreRow) => otRate(r.l.otPay, r.l.otBasePay);
 const vsProj = (r: StoreRow) => variancePct(r.l.hours, r.l.hoursProj);
 /** Pharmacy is outside the overtime scope: its department row shows "Out of OT scope", not 0. */
 const noOt = (r: StoreRow) => r.dept === 'rx';
@@ -67,6 +77,8 @@ export default function TrackingPage() {
     const people = peopleRollup(stores, scope.people, scope.from, scope.to, 'store');
     // People filters also apply to labor actuals (overtime, vacation, call-offs) through associate hours.
     const labor = laborBy(stores, 'store');
+    // Operational overtime replaces the Department filter only (ALL(Dept[Database Name])); associate filters stay.
+    const op = scope.dept === ALL ? labor : operationalLabor(stores, scope.from, scope.to, 'store', peopleActive ? scope.people : null);
     const inc = attendanceRollup(stores, scope.people, scope.from, scope.to, 'store');
     const pro = averageProHoursBy(stores, scope.dept, scope.from, scope.to, scope.people, 'store');
     const d = withDepts
@@ -81,11 +93,11 @@ export default function TrackingPage() {
             const l = d.labor.get(k);
             if (!l && p.begin + p.end + p.hires + p.terms === 0) return [];
             const pr = d.pro.get(k);
-            return [{id: k, name: x.name, district: '', dept: x.id, p, l: l ?? emptyLabor(), incidents: d.inc.get(k) ?? 0, pro: {ft: pr?.ft ?? null, pt: pr?.pt ?? null}, children: []}];
+            return [{id: k, name: x.name, district: '', dept: x.id, p, l: l ?? emptyLabor(), op: null, incidents: d.inc.get(k) ?? 0, pro: {ft: pr?.ft ?? null, pt: pr?.pt ?? null}, children: []}];
           })
         : [];
       const pr = pro.get(id);
-      return {id, name: s.name, district: districtById.get(s.districtId)?.name ?? '', dept: null, p: people.get(id) ?? emptyPeople(), l: labor.get(id) ?? emptyLabor(), incidents: inc.get(id) ?? 0, pro: {ft: pr?.ft ?? null, pt: pr?.pt ?? null}, children};
+      return {id, name: s.name, district: districtById.get(s.districtId)?.name ?? '', dept: null, p: people.get(id) ?? emptyPeople(), l: labor.get(id) ?? emptyLabor(), op: op.get(id) ?? emptyLabor(), incidents: inc.get(id) ?? 0, pro: {ft: pr?.ft ?? null, pt: pr?.pt ?? null}, children};
     });
   };
   const rows = useMemo(() => build(scope.stores, true), [scope]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -93,13 +105,15 @@ export default function TrackingPage() {
   const sum = (rs: StoreRow[]): StoreRow => {
     const p = emptyPeople();
     const l = emptyLabor();
+    const op = emptyLabor();
     let incidents = 0;
     for (const r of rs) {
       (Object.keys(p) as (keyof PeopleTotals)[]).forEach(k => (p[k] += r.p[k]));
       (Object.keys(l) as (keyof LaborTotals)[]).forEach(k => (l[k] += r.l[k]));
+      if (r.op) (Object.keys(op) as (keyof LaborTotals)[]).forEach(k => (op[k] += r.op![k]));
       incidents += r.incidents;
     }
-    return {id: 'sum', name: 'Total', district: '', dept: null, p, l, incidents, pro: {ft: null, pt: null}, children: []};
+    return {id: 'sum', name: 'Total', district: '', dept: null, p, l, op, incidents, pro: {ft: null, pt: null}, children: []};
   };
   const tot = sum(rows);
   const chainTot = sum(chainRows);
@@ -128,9 +142,12 @@ export default function TrackingPage() {
     {key: 'begin', header: 'Beginning headcount', help: HELP.begin, value: r => r.p.begin, render: r => fmt.int(r.p.begin), group: 'People (Workday)'},
     {key: 'end', header: 'Ending headcount', help: HELP.end, value: r => r.p.end, render: r => fmt.int(r.p.end), group: 'People (Workday)'},
     {key: 'ft', header: 'Full-time (%)', sub: 'of ending headcount', help: HELP.ft, value: ftShare, render: r => fmt.pct(ftShare(r), 0), group: 'People (Workday)'},
-    {key: 'otPay', header: 'Overtime $', help: HELP.otPay, value: r => (noOt(r) ? null : r.l.otPay), render: r => (noOt(r) ? <span className="na">Out of OT scope</span> : fmt.money(r.l.otPay)), group: 'Time & attendance (UKG)'},
-    {key: 'otHrs', header: 'Overtime hours', help: HELP.otHrs, value: r => (noOt(r) ? null : r.l.otHours), render: r => (noOt(r) ? <span className="na">—</span> : fmt.int(r.l.otHours)), group: 'Time & attendance (UKG)'},
-    {key: 'otRate', header: 'Overtime rate', sub: '% of payroll $, excl. Pharmacy', help: HELP.otRate, value: r => (noOt(r) ? null : ot(r)), render: r => (noOt(r) ? <span className="na">—</span> : fmt.pct(ot(r), 2)), group: 'Time & attendance (UKG)'},
+    {key: 'otPay', header: 'Overtime $ (excl. Pharmacy)', sub: 'operational', help: HELP.otPay, value: r => r.op?.otPay ?? null, render: r => (r.op ? fmt.money(r.op.otPay) : <OpDash />), group: 'Overtime · operational (Ops 100 Less RX)'},
+    {key: 'otHrs', header: 'Overtime hours (excl. Pharmacy)', sub: 'operational', help: HELP.otHrs, value: r => r.op?.otHours ?? null, render: r => (r.op ? fmt.int(r.op.otHours) : <OpDash />), group: 'Overtime · operational (Ops 100 Less RX)'},
+    {key: 'otRate', header: 'Overtime Rate (% of Payroll, excl. Pharmacy)', sub: 'operational', help: HELP.otRate, value: ot, render: r => (r.op ? fmt.pct(ot(r), 2) : <OpDash />), group: 'Overtime · operational (Ops 100 Less RX)'},
+    {key: 'dOtPay', header: 'Department overtime $', sub: 'department context', help: HELP.dOtPay, value: r => (noOt(r) ? null : r.l.otPay), render: r => (noOt(r) ? <span className="na">Out of OT scope</span> : fmt.money(r.l.otPay)), group: 'Overtime · department context'},
+    {key: 'dOtHrs', header: 'Department overtime hours', sub: 'department context', help: HELP.dOtHrs, value: r => (noOt(r) ? null : r.l.otHours), render: r => (noOt(r) ? <span className="na">Out of OT scope</span> : fmt.int(r.l.otHours)), group: 'Overtime · department context'},
+    {key: 'dOtRate', header: 'Department Overtime Rate (% of Department Payroll)', sub: 'department context', help: HELP.dOtRate, value: r => (noOt(r) ? null : dOt(r)), render: r => (noOt(r) ? <span className="na">Out of OT scope</span> : fmt.pct(dOt(r), 2)), group: 'Overtime · department context'},
     {key: 'callHrs', header: 'Call-off hours', sub: 'draft · vs projected', help: HELP.callHrs, value: r => r.l.hours - r.l.hoursProj, render: r => fmt.signedInt(r.l.hours - r.l.hoursProj), group: 'Time & attendance (UKG)'},
     {key: 'proj', header: 'Call-off %', sub: 'draft · vs projected', help: HELP.proj, value: vsProj, render: r => fmt.signedPct(vsProj(r)), group: 'Time & attendance (UKG)'},
     {key: 'inc', header: 'Attendance incidents', sub: 'illustrative', help: HELP.inc, value: r => r.incidents, render: r => fmt.int(r.incidents), group: 'Time & attendance (UKG)'},
@@ -147,9 +164,12 @@ export default function TrackingPage() {
       begin: () => perStore(r => r.p.begin),
       end: () => perStore(r => r.p.end),
       ft: () => bench(ftShare),
-      otPay: () => perStore(r => r.l.otPay),
-      otHrs: () => perStore(r => r.l.otHours),
+      otPay: () => perStore(r => r.op?.otPay ?? 0),
+      otHrs: () => perStore(r => r.op?.otHours ?? 0),
       otRate: () => bench(ot),
+      dOtPay: () => perStore(r => r.l.otPay),
+      dOtHrs: () => perStore(r => r.l.otHours),
+      dOtRate: () => bench(dOt),
       proj: () => bench(vsProj),
       callHrs: () => perStore(r => r.l.hours - r.l.hoursProj),
       inc: () => perStore(r => r.incidents),
@@ -175,7 +195,7 @@ export default function TrackingPage() {
       ) : (
         <>
           <section className="kpi-grid six" aria-label="People and attendance summary">
-            <KpiCard level="primary" label="Turnover rate" value={fmt.pct(turnover(tot))} hint="Terminations / average headcount, where average headcount = (beginning + ending headcount) / 2, for the time frame. Must match today's OPS 201 logic, still to be reviewed." decisions={['D12']} lines={[chainLine(fmt.pct(bench(turnover)))]} />
+            <KpiCard level="primary" label="Turnover rate" value={fmt.pct(turnover(tot))} hint={TURNOVER_DRAFT_HELP} decisions={['D12', 'D40']} lines={[chainLine(fmt.pct(bench(turnover)))]} />
             <KpiCard
               level="primary"
               label="Terminations & hires"
@@ -210,8 +230,15 @@ export default function TrackingPage() {
               lines={[chainLine(`${fmt.dec1(bench(avgFt))} / ${fmt.dec1(bench(avgPt))}`)]}
             />
             <KpiCard label="Vacation hours" value={fmt.int(tot.l.vacHours)} hint={HELP.vac} decisions={['D17']} lines={[chainCount(fmt.int(perStore(r => r.l.vacHours)))]} />
-            <KpiCard level="primary" label="Overtime $ (excl. Pharmacy)" value={fmt.compactMoney(tot.l.otPay)} hint={HELP.otPay} decisions={['D03', 'D04']} lines={[{label: 'Overtime hours', value: fmt.int(tot.l.otHours)}, chainCount(fmt.compactMoney(perStore(r => r.l.otPay)))]} />
-            <KpiCard level="primary" label="Overtime Rate (% of Payroll $, excl. Pharmacy)" value={fmt.pct(ot(tot), 2)} hint={HELP.otRate} decisions={['D03', 'D04', 'D33']} lines={[chainLine(fmt.pct(bench(ot), 2))]} />
+            <KpiCard level="primary" label="Overtime $ (excl. Pharmacy)" value={fmt.compactMoney(tot.op!.otPay)} hint={HELP.otPay} decisions={['D03', 'D04']} lines={[{label: 'Overtime hours', value: fmt.int(tot.op!.otHours)}, chainCount(fmt.compactMoney(perStore(r => r.op?.otPay ?? 0)))]} />
+            <KpiCard
+              level="primary"
+              label="Overtime Rate (% of Payroll, excl. Pharmacy)"
+              value={fmt.pct(ot(tot), 2)}
+              hint={HELP.otRate}
+              decisions={['D03', 'D04']}
+              lines={[chainLine(fmt.pct(bench(ot), 2)), ...(scope.dept !== ALL ? [{label: `Department rate · ${DEPARTMENTS.find(d => d.id === scope.dept)?.name ?? scope.dept}`, value: scope.dept === 'rx' ? 'Out of OT scope' : fmt.pct(dOt(tot), 2)}] : [])]}
+            />
             <KpiCard level="primary" label="Call-off hours (draft)" value={fmt.signedInt(tot.l.hours - tot.l.hoursProj)} hint={HELP.callHrs} decisions={['D05']} lines={[chainCount(fmt.signedInt(perStore(r => r.l.hours - r.l.hoursProj)))]} />
             <KpiCard label="Attendance incidents" value={fmt.int(tot.incidents)} tag="Illustrative" decisions={['D22', 'D35']} lines={[chainCount(fmt.dec1(perStore(r => r.incidents)))]} hint={HELP.inc} />
             <KpiCard level="primary" label="Call-off % (draft)" value={fmt.signedPct(vsProj(tot))} hint={HELP.proj} decisions={['D05']} lines={[chainLine(fmt.signedPct(bench(vsProj)))]} />
@@ -295,15 +322,24 @@ export default function TrackingPage() {
   );
 }
 
-const DEPT_NOTE = 'people measures (turnover, terminations, hires, headcount, full-time %) and attendance incidents count associates in their home department; hours, overtime, call-off hours, average weekly hours and vacation use the department where the hours were recorded. This home-versus-worked attribution is an assumption to confirm. Pharmacy shows "Out of OT scope" for overtime.';
+const DEPT_NOTE = 'people measures (turnover, terminations, hires, headcount, full-time %) and attendance incidents count associates in their home department; hours, overtime, call-off hours, average weekly hours and vacation use the department where the hours were recorded. This home-versus-worked attribution is an assumption to confirm. Operational overtime columns (Ops 100 Less RX) are store measures and show — on department rows; the department-context overtime columns follow each department, and Pharmacy shows "Out of OT scope".';
 const TREE = {children: (r: StoreRow) => r.children, levels: ['Store', 'Department'], name: (r: StoreRow) => r.name};
 
 function fmtFor(key: string, v: number | null): string {
   if (key === 'turnover') return fmt.pct(v);
   if (key === 'ft') return fmt.pct(v, 0);
-  if (key === 'otRate') return fmt.pct(v, 2);
+  if (key === 'otRate' || key === 'dOtRate') return fmt.pct(v, 2);
   if (key === 'proj') return fmt.signedPct(v);
   if (key === 'callHrs') return fmt.signedDec1(v);
-  if (key === 'otPay') return fmt.money(v);
+  if (key === 'otPay' || key === 'dOtPay') return fmt.money(v);
   return fmt.dec1(v);
+}
+
+/** Operational overtime is a store-level measure: department rows point to the department-context columns instead. */
+function OpDash() {
+  return (
+    <span className="na" title="Operational overtime (Ops 100 Less RX) covers all departments except Pharmacy of the store, so it is not repeated on department rows. See the department-context columns.">
+      —
+    </span>
+  );
 }

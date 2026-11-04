@@ -46,7 +46,9 @@ export type LaborTotals = {
 export type StoreTotals = {
   tx: number;
   txLY: number;
-  /** All-department sales, items and Clean Sales of the stores in scope. */
+  /** All-department sales, items and Clean Sales of the stores in scope. Clean Sales follows Ops 100 Clean Sales Actual /
+   *  Lyear: ALL(Dept[Database Name]) replaces the Department filter, so it is accumulated from every department row
+   *  except GAS, RX and FRONT END, whatever the `dept` argument; store and week filters still apply. */
   storeSales: number;
   storeSalesLY: number;
   storeItems: number;
@@ -187,10 +189,14 @@ export function refLaborRate(t: LaborTotals, ref: Target) {
 export function refAhr(t: LaborTotals, ref: Target) {
   return ref === 'budget' ? ahr(t.payBud, t.hoursBud) : ref === 'mdoc' ? ahr(t.payMdoc, t.hoursMdoc) : ahr(t.payLY, t.hoursLY);
 }
-/** IPLH reference: MDoc = Items MDoc / Hours MDoc (the OPS107 report comparison and the prototype's primary IPLH
- *  reference); Budget = Items Budget / Hours Budget (Ops 100 `IPLH Budget`); LY = Items LY / Hours LY. D01 open. */
-export function refIplh(t: LaborTotals, ref: Target) {
-  return ref === 'mdoc' ? iplh(t.itemsMdoc, t.hoursMdoc) : ref === 'budget' ? iplh(t.itemsBud, t.hoursBud) : iplh(t.itemsLY, t.hoursLY);
+/** IPLH reference, as the Ops 100 measures define each variant (OPS100_Reports_Measures, Measure Definations):
+ *  `IPLH Master Doc` = Items Mdoc / Hours Mdoc; `IPLH Budget` = Items Budget / Hours Budget (OPS107);
+ *  `IPLH Last Year` = Items Lyear / Hours Lyear. With the ID stores toggle, OPS101 uses `ID IPLH Mdoc` =
+ *  ID Items Actual / ID Hours Mdoc: the numerator is actual items, not MDoc items, so `idStores` switches the MDoc
+ *  numerator. ID LY and ID Budget keep the same numerators as their non-ID versions. */
+export function refIplh(t: LaborTotals, ref: Target, idStores = false) {
+  if (ref === 'mdoc') return iplh(idStores ? t.items : t.itemsMdoc, t.hoursMdoc);
+  return ref === 'budget' ? iplh(t.itemsBud, t.hoursBud) : iplh(t.itemsLY, t.hoursLY);
 }
 
 /** Core labor KPIs derived from totals. */

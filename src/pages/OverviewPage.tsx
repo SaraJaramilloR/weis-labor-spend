@@ -1,7 +1,8 @@
 // Proposed overview (not one of the six workbook views): a short summary of labor spend, hours, labor rate and
 // IPLH, with links to the required views for detail. Each KPI keeps its primary reference: Budget for spend, hours
 // and labor rate; MDoc for IPLH, as in the OPS107 report. The reference per KPI is open (D01). Oct 28 review: the
-// cards can also be compared with Last Year (card-level control, separate from the chart's own LY option).
+// cards can also be compared with Last Year (card-level control, separate from the chart's own LY option). Nov 3 final
+// review (21:48–22:57): IPLH vs LY was hard to find, so the control now says it covers all four cards, IPLH included.
 import {useMemo, useState} from 'react';
 import {Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import {PageLink} from '../app/nav';
@@ -15,7 +16,7 @@ import {DecisionChip, EmptyState, InfoTip, PageHeading, Segmented} from '../comp
 import {VisualCard} from '../components/VisualCard';
 import {WEEKS} from '../data/calendar';
 import {DEPARTMENTS, type DeptId} from '../data/org';
-import {laborKpis, refHours, refSpend, rollup, total} from '../lib/aggregate';
+import {laborKpis, refHours, refIplh, refSpend, rollup, total} from '../lib/aggregate';
 import {ALL, TARGET_LABEL, type Target} from '../lib/filters';
 import {fmt, usDate} from '../lib/format';
 import {iplh, laborRate, variance, variancePct, yoyPct} from '../lib/metrics';
@@ -83,8 +84,10 @@ export default function OverviewPage() {
   const rateBud = laborRate(t.labor.payBud, t.labor.salesBud);
   const rateLY = laborRate(t.labor.payLY, t.labor.salesLY);
   const iplhNow = iplh(t.labor.items, t.labor.hours);
-  const iplhMdoc = iplh(t.labor.itemsMdoc, t.labor.hoursMdoc);
-  const iplhLY = iplh(t.labor.itemsLY, t.labor.hoursLY);
+  // ID stores: OPS101 `ID IPLH Mdoc` uses actual items over MDoc hours (not MDoc items).
+  const idStores = scope.filters.idOnly;
+  const iplhMdoc = refIplh(t.labor, 'mdoc', idStores);
+  const iplhLY = refIplh(t.labor, 'ly');
   const salesBasis = `Sales basis: Total Sales (Gross Sales of ${deptLabel(scope.dept).toLowerCase()} in scope) ${fmt.compactMoney(t.labor.sales)}, ${fmt.signedPct(yoyPct(t.labor.sales, t.labor.salesLY))} vs LY; Budget sales ${fmt.compactMoney(t.labor.salesBud)}.`;
   const exploratory = alt ? ` Exploratory (Discovery options): vs ${TARGET_LABEL[alt]} ` : '';
 
@@ -98,13 +101,13 @@ export default function OverviewPage() {
         <>
           <div className="card-compare">
             <span className="card-compare-label" aria-hidden="true">
-              Compare cards with
+              Compare all four cards with
             </span>
-            <Segmented label="Compare the four cards with" value={cardRef} options={[{id: 'primary', label: 'Budget / MDoc'}, {id: 'ly', label: 'Last Year'}]} onChange={setCardRef} size="sm" />
+            <Segmented label="Compare all four cards (Labor Spend, Labor Hours, Labor Rate, IPLH) with" value={cardRef} options={[{id: 'primary', label: 'Budget / MDoc'}, {id: 'ly', label: 'Last Year'}]} onChange={setCardRef} size="sm" />
             <InfoTip
               align="left"
               label="About the card comparison"
-              text="Applies to the four cards only; the weekly chart has its own LY option. Budget is the current comparison for Labor Spend, Labor Hours and Labor Rate. IPLH uses MDoc (Master Doc, the Ops operational target, not the formal Budget). Official comparison references remain pending business confirmation (D01). Last Year: the same fiscal weeks one year earlier (364 days); Labor Rate differences are in percentage points. Use ID stores in More filters for a like-for-like store base."
+              text="Last Year updates all four cards, including IPLH: LY IPLH = LY items / LY hours, and the difference is shown in items per labor hour and in %. Applies to the four cards only; the weekly chart has its own LY option. Budget / MDoc: Labor Spend and Labor Rate vs Budget and IPLH vs MDoc, as in the Ops 100 reports. Labor Hours vs Budget is a prototype default: Ops 100 reports compare hours with MDoc, which Ops sets and can revise manually, and the UC5 hours default is still to be agreed (D01). Budget and MDoc are separate targets and never forced to match. Last Year: the same fiscal weeks one year earlier (364 days); Labor Rate differences are in percentage points. ID stores in More filters limits the cards to Ops identical stores (illustrative eligibility, D07)."
             />
             <span className="open-legend">
               <DecisionChip ids={['D01']} label="Open" align="left" /> = Business definition or comparison rule pending confirmation.
@@ -156,7 +159,7 @@ export default function OverviewPage() {
               decisions={['D01']}
               hint={
                 <>
-                  Items sold / actual labor hours. Current comparison: MDoc (Master Doc, the Ops operational target) = MDoc items / MDoc hours, as in the OPS107 IPLH report; MDoc is not the formal Budget. The Ops 100 model also holds IPLH Budget; the reference for UC5 is open (D01). LY IPLH = LY items / LY hours. Differences are in items per labor hour (and %).
+                  Items sold / actual labor hours (Ops 100 IPLH Actual). Compared with MDoc (Master Doc, the Ops operational target), as Ops 100 IPLH Actual vs Master Doc: {idStores ? 'with ID stores, ID IPLH Mdoc = actual items / MDoc hours (OPS101)' : 'IPLH Master Doc = MDoc items / MDoc hours'}. MDoc is not the formal Budget; Ops 100 also has IPLH Budget = Budget items / Budget hours (OPS107), not shown on this card. LY IPLH = LY items / LY hours. Differences are in items per labor hour (and %).
                 </>
               }
               lines={vsLY ? [{label: 'LY', value: fmt.dec1(iplhLY)}, {label: 'vs LY', value: <RatioVar actual={iplhNow} target={iplhLY} />}] : [{label: 'MDoc', value: fmt.dec1(iplhMdoc)}, {label: 'vs MDoc', value: <RatioVar actual={iplhNow} target={iplhMdoc} />}]}

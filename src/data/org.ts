@@ -37,7 +37,8 @@ export type Department = {
   ahr: number;
   /** Illustrative average item value. */
   aiv: number;
-  /** Excluded from Clean Sales (confirmed in the Oct 27, 2026 session: Fuel, Pharmacy, Front End). */
+  /** Excluded from Clean Sales: the Ops 100 Clean Sales Actual measure excludes the GAS, RX and FRONT END department rows
+   *  (and TOTAL, which the prototype does not model). */
   cleanExcluded: boolean;
   /** Excluded from the overtime scope (Pharmacy, confirmed). */
   otExcluded: boolean;
@@ -63,6 +64,18 @@ export const DEPARTMENTS: Department[] = [
   {id: 'online', name: 'Online', salesShare: 1.6, laborShare: 2.4, ahr: 16.2, aiv: 4.5, cleanExcluded: false, otExcluded: false},
 ];
 export const deptById = new Map(DEPARTMENTS.map(d => [d.id, d]));
+
+export type DeptGroupId = 'center' | 'fresh';
+/** Ops 100 "Dept Group" rollups supplied in the workbook (UC #5 - Open Questions, Stakeholder Answer, question 7). Center
+ *  Store and Fresh are department rollups; Clean is a reporting filter, not a level beside them (Nov 4 session). Other
+ *  group membership is not documented, so Pharmacy, Fuel, Front End and Online are not assigned. Groups do not overlap. */
+export const DEPT_GROUPS: {id: DeptGroupId; name: string; depts: DeptId[]}[] = [
+  {id: 'center', name: 'Center Store', depts: ['grocery', 'dairy', 'frozen', 'hbc', 'gm', 'beer']},
+  {id: 'fresh', name: 'Fresh', depts: ['meat', 'produce', 'deli', 'bakery', 'seafood', 'floral', 'starbucks']},
+];
+export const deptGroupOf = (dept: DeptId) => DEPT_GROUPS.find(g => g.depts.includes(dept))?.id ?? null;
+/** Departments without a supplied Dept Group membership. */
+export const UNGROUPED_DEPTS = DEPARTMENTS.filter(d => deptGroupOf(d.id) === null).map(d => d.id);
 
 export const REGIONS: Region[] = [1, 2, 3].map(n => ({id: `R${n}`, name: `Region ${n}`}));
 export const DISTRICTS: District[] = Array.from({length: 12}, (_, i) => ({

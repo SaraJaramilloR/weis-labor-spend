@@ -44,6 +44,12 @@ describe('AIV history (OPS111 measures)', () => {
     expect(inflationPct(t, 'budget')).toBeCloseTo((a - bud) / bud, 12);
     expect(inflationValue(t, 'budget')).toBeCloseTo((a - bud) * t.items, 6);
   });
+  it('the labeled formulas match: Estimated Inflation = (AIV TY / AIV LY) − 1; AIV Variance = (AIV TY / AIV Budget) − 1', () => {
+    const t = total(all, 'All', LAST_WEEK_IDX - 3, LAST_WEEK_IDX).labor;
+    expect(inflationPct(t, 'ly')).toBeCloseTo(aivActual(t)! / aivRef(t, 'ly')! - 1, 12);
+    expect(inflationPct(t, 'budget')).toBeCloseTo(aivActual(t)! / aivRef(t, 'budget')! - 1, 12);
+    expect(inflationPct(t, 'budget')).not.toBeCloseTo(inflationPct(t, 'ly')!, 6);
+  });
   it('a department history uses only that department', () => {
     const meat = rollup(all, 'meat', from, to, 'week');
     expect(meat.get(String(to))!.labor.sales).toBeLessThan(weekly.get(String(to))!.labor.sales);

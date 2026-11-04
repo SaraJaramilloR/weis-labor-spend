@@ -17,7 +17,7 @@ import {HoursVar, MoneyVar, PctVar, RateVar, RatioVar} from '../components/kpiLi
 import {ScopeLine, VisualFilters} from '../components/scope';
 import {DecisionChip, EmptyState, InfoTip, PageHeading, Segmented} from '../components/ui';
 import {VisualCard} from '../components/VisualCard';
-import {HOURS_BUDGET_HELP, HOURS_MDOC_HELP, HOURS_REF_HELP, HOURS_REF_OPTIONS, OT_RATE_HELP, hoursRefName, type HoursRef} from '../config/references';
+import {HOURS_BUDGET_HELP, HOURS_MDOC_HELP, HOURS_REF_HELP, HOURS_REF_OPTIONS, OT_HOURS_HELP, OT_PAY_HELP, OT_RATE_HELP, hoursRefName, type HoursRef} from '../config/references';
 import {districtById, regionById, storeById} from '../data/org';
 import {refAhr, refHours, refSpend, rollup, total, type LaborTotals, type Rollup} from '../lib/aggregate';
 import {TARGET_LABEL, type Target} from '../lib/filters';
@@ -46,8 +46,8 @@ const HELP = {
   salesVar: 'Sales vs Budget, % = (Total Sales − Budgeted sales) / Budgeted sales. Context for the labor rate: a store selling above budget can spend above its labor budget and still keep its labor rate.',
   ahr: 'Average Hourly Rate (AHR), actual = Labor spend $ / Labor hours.',
   ahrBud: 'AHR, budget = Budgeted labor $ / Budgeted hours.',
-  otPay: 'Overtime $, excluding Pharmacy (RX). Full overtime pay or premium only is open (D04).',
-  otHours: 'Overtime hours, excluding Pharmacy (RX).',
+  otPay: OT_PAY_HELP,
+  otHours: OT_HOURS_HELP,
   hc: 'Ending headcount: active associates on the last day of the time frame (a snapshot). Region and district rows add up the stores at the same date.',
   otRate: OT_RATE_HELP,
   hoursMdoc: HOURS_MDOC_HELP,
@@ -153,7 +153,7 @@ export default function BudgetPage() {
             <KpiCard level="primary" label="Labor hours" value={fmt.compactHours(L.hours)} decisions={['D01']} hint={hoursRef === 'mdoc' ? HELP.hoursMdoc : HELP.hoursBud} lines={[{label: hRef, value: fmt.compactHours(hTarget(L))}, {label: `vs ${hRef}`, value: <HoursVar actual={L.hours} target={hTarget(L)} />}, ...(alt === 'ly' ? [{label: `vs ${altName}`, value: <HoursVar actual={L.hours} target={refHours(L, alt)} />}] : [])]} />
             <KpiCard level="primary" label="Labor spend" value={fmt.compactMoney(L.pay)} decisions={['D01']} lines={[{label: 'Budget', value: fmt.compactMoney(L.payBud)}, {label: 'vs Budget', value: <MoneyVar actual={L.pay} target={L.payBud} />}, ...(alt ? [{label: `vs ${altName}`, value: <MoneyVar actual={L.pay} target={refSpend(L, alt)} />}] : [])]} />
             <KpiCard label="Average hourly rate" value={fmt.money2(ahr(L.pay, L.hours))} lines={[{label: 'Budget', value: fmt.money2(ahr(L.payBud, L.hoursBud))}, {label: 'vs Budget', value: <RatioVar actual={ahr(L.pay, L.hours)} target={ahr(L.payBud, L.hoursBud)} digits={2} prefix="$" />}, ...(alt ? [{label: altName, value: fmt.money2(refAhr(L, alt))}] : [])]} />
-            <KpiCard label="Overtime Rate (% of Payroll, excl. Pharmacy)" value={fmt.pct(otRate(L.otPay, L.otBasePay), 2)} hint={HELP.otRate} decisions={['D03', 'D04', 'D33']} lines={[{label: 'Overtime $', value: fmt.compactMoney(L.otPay)}, {label: 'Overtime hours', value: fmt.int(L.otHours)}, {label: '$ vs LY', value: <PctVar actual={L.otPay} target={L.otPayLY} />}]} />
+            <KpiCard label="Overtime Rate (% of Payroll, excl. Pharmacy)" value={fmt.pct(otRate(L.otPay, L.otBasePay), 2)} hint={HELP.otRate} decisions={['D03', 'D04']} lines={[{label: 'Overtime $', value: fmt.compactMoney(L.otPay)}, {label: 'Overtime hours', value: fmt.int(L.otHours)}, {label: '$ vs LY', value: <PctVar actual={L.otPay} target={L.otPayLY} />}]} />
             <KpiCard label="Current headcount" value={fmt.int(currentHc)} hint="Active associates at the end of the time frame (a snapshot, not a sum of weeks)." decisions={['D12']} lines={[{label: 'Snapshot', value: 'End of time frame'}]} />
           </section>
 
@@ -173,7 +173,7 @@ export default function BudgetPage() {
             actions={<Segmented label="Table presentation" value={mode} options={[{id: 'hierarchy', label: 'Hierarchy'}, {id: 'stores', label: 'Store comparison'}]} onChange={setMode} size="sm" />}
           >
             <p className="table-scope">
-              <b>Showing</b> {where} · Total row = all stores in scope · Hours vs {hoursRef === 'mdoc' ? 'MDoc (operational target)' : 'Budget'}; spend, labor rate and AHR vs Budget (SO 1007) <DecisionChip ids={['D01', 'D19', 'D33']} label="Open" align="left" />
+              <b>Showing</b> {where} · Total row = all stores in scope · Hours vs {hoursRef === 'mdoc' ? 'MDoc (operational target)' : 'Budget'}; spend, labor rate and AHR vs Budget (SO 1007) <DecisionChip ids={['D01', 'D19']} label="Open" align="left" />
             </p>
             {mode === 'hierarchy' ? (
               <DataTable

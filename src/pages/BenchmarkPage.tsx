@@ -19,6 +19,7 @@ import {DataTable, type Column} from '../components/DataTable';
 import {ScopeLine, VisualFilters} from '../components/scope';
 import {DecisionChip, EmptyState, InfoTip, PageHeading, Segmented} from '../components/ui';
 import {VisualCard} from '../components/VisualCard';
+import {TURNOVER_DRAFT_HELP, TURNOVER_DRAFT_NOTE} from '../config/turnover';
 import {regionById} from '../data/org';
 import {fmt} from '../lib/format';
 import {ppDiff, ratio} from '../lib/metrics';
@@ -230,7 +231,7 @@ function tableColumns(group: TableGroup, bench: {chain: Benchmark; region: Map<s
   const rate2 = (v: number | null) => fmt.pct(v, 2);
   return [
     nameCol,
-    {key: `own-${kpi}`, header: `${name} (%)`, help: `${kpi === 'turnover' ? "The row's own rate: terminations / average headcount ((beginning + ending) / 2) in the time frame, recalculated from the row's totals. Not annualized. Draft until OPS 201 is reviewed (D12)." : "The row's own rate: (beginning headcount − terminations of those associates) / beginning headcount, recalculated from the row's totals. Cohort-based draft; not 1 − turnover (D27)."} Shown to two decimals.`, value: own, render: r => rate2(own(r)), group: g},
+    {key: `own-${kpi}`, header: `${name} (%)`, help: `${kpi === 'turnover' ? `The row's own rate, recalculated from the row's totals. ${TURNOVER_DRAFT_HELP}` : "The row's own rate: (beginning headcount − terminations of those associates) / beginning headcount, recalculated from the row's totals. Cohort-based draft; not 1 − turnover (D27)."} Shown to two decimals.`, value: own, render: r => rate2(own(r)), group: g},
     {key: `region-${kpi}`, header: `Region ${name} (%)`, help: `Regional reference: the ${kpi} benchmark of the row's region (${methodName}; rule open, D13), shown to two decimals. On a Region row: ${SELF_REGION} On the Chain row: n/a. ${NA_SPANS}`, value: reg, render: r => (regionSelf(r) ? self(SELF_REGION, rate2(reg(r))) : regionBench(r).b ? rate2(reg(r)) : na(regionBench(r).why)), group: g},
     {key: `chain-${kpi}`, header: `Chain ${name} (%)`, help: `Chain reference: the ${kpi} benchmark of the chain (${methodName}; rule open, D13), shown to two decimals. Same value on every row; on the Chain row: ${SELF_CHAIN}`, value: chn, render: r => (chainSelf(r) ? self(SELF_CHAIN, rate2(chn(r))) : rate2(chn(r))), group: g},
     {key: `diffRegion-${kpi}`, header: 'Difference vs Region (pp)', help: diffHelp(kpi, 'Region'), value: r => ppDiff(own(r), reg(r)), render: r => (regionSelf(r) ? self(SELF_REGION, fmt.pp(ppDiff(own(r), reg(r)), 1)) : regionBench(r).b ? fmt.pp(ppDiff(own(r), reg(r)), 1) : na(regionBench(r).why)), group: g},
@@ -284,7 +285,7 @@ function TrendSection({scope, row, scopeTitle, method, benchNote}: {scope: Scope
         Trends · {scopeTitle} <span className="note">({row.storeIds.length} {row.storeIds.length === 1 ? 'store' : 'stores'})</span>
       </h2>
       <div className="trend-grid">
-        <RateChart title="Turnover Rate over Time" subtitle={`${short}: terminations / average headcount per ${unit}.`} help={`Recalculated from the scope's terminations and headcount for each ${unit}; benchmark lines follow the documented draft (D12, D13). ${timeNote}`} data={rate('turnover')} series={series} filters={filtersInfo} fromZero />
+        <RateChart title="Turnover Rate over Time" subtitle={`${short}: terminations / average headcount per ${unit}.`} help={`Recalculated from the scope's terminations and headcount for each ${unit}; benchmark lines follow the documented draft (D12, D13). Provisional: per period of the trend, not the confirmed rolling 52-week OPS 200 calculation (D40). ${timeNote}`} data={rate('turnover')} series={series} filters={filtersInfo} fromZero />
         <RateChart title="Retention Rate over Time" subtitle={`${short}: cohort retention per ${unit} (draft, D27).`} help={`(Beginning headcount − terminations of those associates) / beginning headcount for each ${unit}, recalculated from the scope's totals. Not 1 − turnover. ${timeNote}`} data={rate('retention')} series={series} filters={filtersInfo} />
         <CountChart title="Hires over Time" scopeName={short} measure="Hires" help={`Number of hires of ${short} per ${unit} (event count). Benchmarks are averages per store and appear only in the tooltip, next to the scope's own average per store. ${timeNote}`} data={counts('hires')} regionName={regionName} filters={filtersInfo} />
         <CountChart title="Terminations over Time" scopeName={short} measure="Terminations" help={`Number of terminations of ${short} per ${unit} (event count). Benchmarks are averages per store, in the tooltip only. ${timeNote}`} data={counts('terms')} regionName={regionName} filters={filtersInfo} />
@@ -466,7 +467,7 @@ function Ranking({stores, selectedId, onSelect, chain, regionOf, uniqueRegion, s
       {selectedId && rank > RANK_LIMIT ? <p className="note">The selected store ranks #{rank} of {ranked.length} and is not in the top {RANK_LIMIT}.</p> : null}
       <p className="note">
         {uniqueRegion ? '' : 'Several regions are in scope: each store’s own region benchmark is in its tooltip. '}
-        Turnover is per selected time frame, not annualized. <DecisionChip ids={['D12', 'D13']} label="Rules open" align="left" />
+        Turnover is per selected time frame, not annualized. {TURNOVER_DRAFT_NOTE} <DecisionChip ids={['D12', 'D13', 'D40']} label="Rules open" align="left" />
       </p>
     </VisualCard>
   );

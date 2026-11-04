@@ -18,5 +18,15 @@ export const HOURS_BUDGET_HELP = 'Budgeted labor hours (SO 1007), the formal Bud
 export const HOURS_MDOC_HELP =
   'MDoc (Master Doc) labor hours: the operational target stores are asked to follow (Ops 100 `Hours Mdoc`; OPS106 / OPS108 compare hours with MDoc). Not the formal Budget. Which reference UC5 uses is open (D01).';
 
-export const OT_RATE_HELP =
-  'Overtime Rate (% of Payroll, excl. Pharmacy) = overtime $ / total payroll $ (actual labor spend), both excluding Pharmacy (RX): the workbook and Ops 100 "OT Less RX Rate" formula. Pharmacy is excluded from overtime (confirmed). The denominator is pending confirmation: in the prototype review overtime dollars were described as divided by labor budget (41:46), which differs from the payroll denominator used here (D33). No threshold or status is applied.';
+const OT_OPERATIONAL_SCOPE =
+  'Operational scope (Ops 100 "Less RX" measures): all departments except Pharmacy (RX) of the stores and weeks in the row; the Department filter does not change it, while location, time and associate filters still apply. Where department rows are shown, they use the department-context overtime columns instead.';
+
+export const OT_RATE_HELP = `Overtime Rate (% of Payroll, excl. Pharmacy) = overtime $ / actual labor spend (payroll $), both excluding Pharmacy (RX) and the TOTAL row: Ops 100 OT_Less_RX_Rate_TY = OT_Less_RX_OT_Dollar_Act / OT_Less_RX_Pay_Act. Confirmed for operational reporting; Pharmacy data is kept for other reporting. ${OT_OPERATIONAL_SCOPE} Whether overtime $ is full pay or premium only is open (D04). No threshold or status is applied.`;
+export const OT_PAY_HELP = `Overtime $ (excl. Pharmacy): Ops 100 OT_Less_RX_OT_Dollar_Act. ${OT_OPERATIONAL_SCOPE} Full overtime pay or premium only is open (D04).`;
+export const OT_HOURS_HELP = `Overtime hours (excl. Pharmacy): Ops 100 OT_Less_RX_OT_Hrs_Act. ${OT_OPERATIONAL_SCOPE}`;
+
+const OT_DEPT_SCOPE =
+  'Department context (prototype design choice, not the Ops 100 Less RX measure): follows the department of the row and the Department filter; on store, district, region and total rows it adds up the departments in context. Pharmacy is out of the overtime scope. With all departments in context it equals the operational value.';
+export const OT_DEPT_RATE_HELP = `Department Overtime Rate (% of Department Payroll) = department overtime $ / department actual payroll $. ${OT_DEPT_SCOPE}`;
+export const OT_DEPT_PAY_HELP = `Department overtime $: overtime dollars of the departments in context. ${OT_DEPT_SCOPE} Full overtime pay or premium only is open (D04).`;
+export const OT_DEPT_HOURS_HELP = `Department overtime hours: overtime hours of the departments in context. ${OT_DEPT_SCOPE}`;

@@ -21,14 +21,15 @@ type AivInputs = Pick<LaborTotals, 'sales' | 'items' | 'salesLY' | 'itemsLY' | '
 export const aivActual = (t: AivInputs) => aiv(t.sales, t.items);
 export const aivRef = (t: AivInputs, cmp: AivCompare) => (cmp === 'ly' ? aiv(t.salesLY, t.itemsLY) : aiv(t.salesBud, t.itemsBud));
 
-/** Estimated inflation % = (AIV TY − AIV reference) / AIV reference. */
+/** (AIV TY − AIV reference) / AIV reference. Against LY it is the estimated inflation; against Budget the same expression
+ *  is labeled AIV Variance (a budget check, not observed inflation). */
 export function inflationPct(t: AivInputs, cmp: AivCompare): number | null {
   const a = aivActual(t);
   const r = aivRef(t, cmp);
   return a === null || r === null ? null : ratio(a - r, r);
 }
 
-/** Estimated inflation $ value = (AIV TY − AIV reference) × Items TY. */
+/** (AIV TY − AIV reference) × Items TY: estimated inflation $ against LY, AIV Variance $ against Budget. */
 export function inflationValue(t: AivInputs, cmp: AivCompare): number | null {
   const a = aivActual(t);
   const r = aivRef(t, cmp);
