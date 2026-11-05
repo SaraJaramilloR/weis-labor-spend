@@ -82,7 +82,7 @@ const HELP = {
   ahrBud: 'Average Hourly Rate (AHR), budget, $ = Budgeted labor $ / Budgeted hours.',
   iplh: 'Items per Labor Hour (IPLH) = Items sold / Actual labor hours.',
   iplhMdoc: 'IPLH difference vs MDoc (Master Doc) = IPLH Actual − IPLH Master Doc, where IPLH Master Doc = MDoc items / MDoc hours (Ops 100 IPLH Actual vs Master Doc; OPS101, OPS102, OPS107). Ops 100 also has IPLH Last Year and IPLH Budget (Budget items / Budget hours, OPS107), not shown in this column.',
-  rate: 'Labor rate, % = Labor spend $ / Total Sales $ for the same stores, departments and weeks (sales basis open, D19).',
+  rate: 'Labor rate, % = Labor spend $ / Total Sales $ for the same stores, departments and weeks (sales basis open, D19). On a department row it compares the department\'s payroll with the department\'s own sales. In the synthetic data, Front End carries about a quarter of store payroll and under 1 % of sales, so its department rate is about 300 %; whether real Front End payroll and department sales follow this pattern needs validation. Front End department sales are not the calculated Front End Sales scope (D16).',
   rateBud: 'Labor rate difference vs Budget, in percentage points (pp) = actual labor rate − (Budgeted labor $ / Budgeted sales $).',
   otPay: OT_PAY_HELP,
   otHours: OT_HOURS_HELP,
@@ -234,6 +234,7 @@ function DepartmentSummary({scope, t, plTotal, opTotal, lyAvailable}: {scope: Sc
             'One row per department for all stores in scope (Region, District, Store, State and Geography filters), for the selected time frame. With one department selected in the Department filter, only that department is shown.',
             'Each row adds up the store × department × week totals of its departments; ratios (IPLH, labor rate, AHR, overtime rate, AIV, variance %) are recalculated from the row totals, never averaged across stores or departments.',
             'Center Store / Fresh follows the Dept Group memberships supplied in the workbook (Stakeholder Answer). The groups do not overlap. Departments without a supplied group are shown together so the rows add up to the Total; this auxiliary row is not the official Other group. Clean is a reporting filter in Ops 100, not a level beside Center Store and Fresh, so it is not a row here (D34).',
+            'Labor rate on a department row = department payroll / department sales (confirmed formula, not capped). The synthetic data gives Front End about a quarter of payroll and under 1 % of sales, so its rate is about 300 %; this interpretation needs validation. Front End department sales are not the calculated Front End Sales scope (D16).',
             'Customer count, basket size and sales per transaction: a department row uses the transactions that include the department (Ops 100 department rows); group rows show n/a because department transactions overlap and cannot be added up. The Total row uses store transactions.',
             'Budget and MDoc stay separate, as in the table below. Position and Tenure filter labor actuals only; budgets, sales and items show n/a, as in the rest of the page (D20).',
           ]}

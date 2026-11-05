@@ -1,11 +1,11 @@
 import {useRef, useState} from 'react';
-import {ASSUMPTIONS, DECISIONS, GLOSSARY, KPI_DEFINITIONS} from '../config/definitions';
+import {ASSUMPTIONS, DECISIONS_BY_STATUS, GLOSSARY, KPI_DEFINITIONS, STATUS_HELP, decisionStatus} from '../config/definitions';
 import {Segmented} from './ui';
 
 type Tab = 'kpis' | 'decisions' | 'glossary' | 'assumptions';
 const TABS: {id: Tab; label: string}[] = [
   {id: 'kpis', label: 'KPI definitions'},
-  {id: 'decisions', label: 'Open decisions'},
+  {id: 'decisions', label: 'Decisions & status'},
   {id: 'glossary', label: 'Glossary'},
   {id: 'assumptions', label: 'Prototype assumptions'},
 ];
@@ -61,10 +61,12 @@ export function DefinitionsDialog() {
             </table>
           ) : null}
           {tab === 'decisions' ? (
-            <table aria-label="Open decisions">
+            <>
+            <p className="defs-intro">Unresolved items first. Status separates business confirmation from source availability and implementation; answered and closed items stay listed for traceability.</p>
+            <table aria-label="Decisions and status">
               <thead>
                 <tr>
-                  {['ID', 'Decision', 'How the prototype handles it', 'Owner'].map(h => (
+                  {['ID', 'Status', 'Decision', 'How the prototype handles it', 'Owner'].map(h => (
                     <th key={h} scope="col" className="txt">
                       {h}
                     </th>
@@ -72,9 +74,14 @@ export function DefinitionsDialog() {
                 </tr>
               </thead>
               <tbody>
-                {DECISIONS.map(d => (
-                  <tr key={d.id}>
+                {DECISIONS_BY_STATUS.map(d => (
+                  <tr key={d.id} data-status={decisionStatus(d.id)}>
                     <td className="txt">{d.id}</td>
+                    <td className="txt">
+                      <span className={`status-tag status-${decisionStatus(d.id).split(' ')[0].toLowerCase()}`} title={STATUS_HELP[decisionStatus(d.id)]}>
+                        {decisionStatus(d.id)}
+                      </span>
+                    </td>
                     <td className="txt">
                       <b>{d.title}</b>
                     </td>
@@ -84,6 +91,7 @@ export function DefinitionsDialog() {
                 ))}
               </tbody>
             </table>
+            </>
           ) : null}
           {tab === 'glossary' ? (
             <dl className="glossary">

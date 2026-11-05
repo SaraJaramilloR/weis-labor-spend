@@ -60,8 +60,9 @@ export function DataTable<R>({
   tree,
   pageSize,
   rowClickable,
-  stickyFirst = false,
+  stickyFirst = true,
   countLabel,
+  exportNotes = [],
 }: {
   rows: R[];
   columns: Column<R>[];
@@ -83,8 +84,10 @@ export function DataTable<R>({
   pageSize?: number;
   /** With a tree, which rows `onRowClick` applies to (default: all). */
   rowClickable?: (r: R) => boolean;
-  /** Keeps the first (label) column visible during horizontal scrolling. */
+  /** Keeps the first (label) column visible during horizontal scrolling (default). */
   stickyFirst?: boolean;
+  /** Extra lines written above the CSV header, e.g. the selected week, cutoff and location scope. */
+  exportNotes?: string[];
   /** Replaces the "x of y rows" count, e.g. to count stores inside a tree. */
   countLabel?: (visible: TreeRow<R>[]) => string;
 }) {
@@ -131,7 +134,7 @@ export function DataTable<R>({
     const head = columns.map(c => (c.sub ? `${c.header} (${c.sub})` : c.header));
     const withPath = Boolean(tree?.path);
     const body: Cell[][] = lines.map(({r, level}) => [...(tree ? [level] : []), ...(withPath ? [tree!.path!(r)] : []), ...columns.map(c => (c.exportValue ?? c.value)(r))]);
-    downloadCsv(exportName ?? label, toCsv(tree ? ['Level', ...(withPath ? ['Path'] : []), ...head] : head, body, [EXPORT_NOTE]));
+    downloadCsv(exportName ?? label, toCsv(tree ? ['Level', ...(withPath ? ['Path'] : []), ...head] : head, body, [EXPORT_NOTE, ...exportNotes]));
   };
 
   const pages = pageSize ? Math.max(1, Math.ceil(visible.length / pageSize)) : 1;

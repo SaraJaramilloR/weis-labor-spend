@@ -291,3 +291,10 @@ table.sticky-first tr.selected td, table.sticky-first tr.selected td:first-child
 .deeper-links { margin: -2px 0 12px; font-size: 12px; color: var(--text-muted); line-height: 1.7; }
 .deeper-links > span:first-child { font-weight: 700; color: #484644; }
 label.check { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: #252423; cursor: pointer; }
+.defs-intro { margin: 0 0 8px; font-size: 12px; color: var(--text-muted); }
+.status-tag { display: inline-block; padding: 1px 6px; border: 1px solid #c8c6c4; border-radius: 2px; font-size: 11px; font-weight: 700; white-space: nowrap; color: #252423; background: #fff; }
+.status-open, .status-partly { border-color: #c19c00; background: #fff8e1; }
+.status-answered, .status-source { border-color: #8a8886; background: #f3f2f1; }
+.status-closed, .status-deferred { border-color: #c8c6c4; color: #605e5c; }
+
+.fb-help { display: block; max-width: 300px; margin-top: 4px; font-size: 11px; line-height: 1.35; color: var(--text-muted); }

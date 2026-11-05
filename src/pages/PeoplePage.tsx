@@ -9,7 +9,7 @@ import {DecisionChip, EmptyState, IllustrativeChip, PageHeading, Segmented} from
 import {VisualCard} from '../components/VisualCard';
 import {districtById, regionById, storeById} from '../data/org';
 import {AGE_RANGES, POSITIONS, RECRUITERS, TENURE_BANDS} from '../data/people';
-import {TURNOVER_DRAFT_HELP, TURNOVER_DRAFT_NOTE} from '../config/turnover';
+import {TURNOVER_DRAFT_HELP, TURNOVER_DRAFT_NOTE, TURNOVER_TAG} from '../config/turnover';
 import {fmt} from '../lib/format';
 import {headcountShare, turnoverRate} from '../lib/metrics';
 import {peopleKpis, peopleRollup, peopleTotal, type PeopleGroup, type PeopleTotals} from '../lib/peopleMetrics';
@@ -60,7 +60,7 @@ export default function PeoplePage() {
     {key: 'end', header: 'End HC', value: r => r.p.end, render: r => fmt.int(r.p.end)},
     {key: 'hires', header: 'Hires', value: r => r.p.hires, render: r => fmt.int(r.p.hires)},
     {key: 'terms', header: 'Terminations', value: r => r.p.terms, render: r => fmt.int(r.p.terms)},
-    {key: 'turnover', header: 'Turnover', help: TURNOVER_DRAFT_HELP, value: turnover, render: r => fmt.pct(turnover(r))},
+    {key: 'turnover', header: 'Turnover', sub: 'provisional', help: TURNOVER_DRAFT_HELP, value: turnover, render: r => fmt.pct(turnover(r))},
     {key: 'ft', header: 'Full-time ratio', sub: '% of ending headcount', help: FT_HELP, value: r => headcountShare(r.p.ftEnd, r.p.ftEnd, r.p.ptEnd), render: r => fmt.pct(headcountShare(r.p.ftEnd, r.p.ftEnd, r.p.ptEnd), 0)},
     {key: 'pt', header: 'Part-time ratio', sub: '% of ending headcount', help: PT_HELP, value: r => headcountShare(r.p.ptEnd, r.p.ftEnd, r.p.ptEnd), render: r => fmt.pct(headcountShare(r.p.ptEnd, r.p.ftEnd, r.p.ptEnd), 0)},
   ];
@@ -81,7 +81,7 @@ export default function PeoplePage() {
             <KpiCard level="primary" label="Ending headcount" value={fmt.int(k.end)} hint="Active associates at the end of the time frame (snapshot)." lines={[{label: 'Beginning', value: fmt.int(k.begin)}]} />
             <KpiCard level="primary" label="Hires" value={fmt.int(k.hires)} />
             <KpiCard level="primary" label="Terminations" value={fmt.int(k.terms)} hint="Workday supplies a single termination type." />
-            <KpiCard level="primary" label="Turnover rate" value={fmt.pct(k.turnover)} hint={TURNOVER_DRAFT_HELP} decisions={['D12', 'D40']} lines={[{label: 'Avg headcount', value: fmt.dec1(k.avg)}]} />
+            <KpiCard level="primary" label="Turnover rate" tag={TURNOVER_TAG} value={fmt.pct(k.turnover)} hint={TURNOVER_DRAFT_HELP} decisions={['D12', 'D40']} lines={[{label: 'Avg headcount', value: fmt.dec1(k.avg)}]} />
             <KpiCard label="Full-time ratio" value={fmt.pct(k.ftShare, 0)} hint={FT_HELP} />
             <KpiCard label="Part-time ratio" value={fmt.pct(k.ptShare, 0)} hint={PT_HELP} />
           </section>

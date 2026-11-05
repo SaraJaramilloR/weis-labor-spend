@@ -8,4 +8,7 @@ export const TURNOVER_FORMULA = 'Terminations in the selected time frame / avera
 
 export const TURNOVER_DRAFT_HELP = `Provisional: ${TURNOVER_FORMULA} Not annualized. Confirmed direction: turnover is a rolling 52-week metric anchored on the selected reporting point, using the existing OPS 200 calculation. That calculation (numerator window, headcount averaging and window anchoring) is awaiting source review and implementation, so this value does not apply the 52-week method and has not been tested against it (D40). OPS 201 is still to be reviewed (D12).`;
 
+/** Short visible label next to turnover indicators, charts and table headings. */
+export const TURNOVER_TAG = 'Provisional · rolling 52-week calculation pending';
+
 export const TURNOVER_DRAFT_NOTE = 'Turnover is provisional: it uses the selected time frame, not yet the confirmed rolling 52-week OPS 200 calculation.';

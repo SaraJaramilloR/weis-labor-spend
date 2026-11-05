@@ -19,7 +19,7 @@ import {DataTable, type Column} from '../components/DataTable';
 import {ScopeLine, VisualFilters} from '../components/scope';
 import {DecisionChip, EmptyState, InfoTip, PageHeading, Segmented} from '../components/ui';
 import {VisualCard} from '../components/VisualCard';
-import {TURNOVER_DRAFT_HELP, TURNOVER_DRAFT_NOTE} from '../config/turnover';
+import {TURNOVER_DRAFT_HELP, TURNOVER_DRAFT_NOTE, TURNOVER_TAG} from '../config/turnover';
 import {regionById} from '../data/org';
 import {fmt} from '../lib/format';
 import {ppDiff, ratio} from '../lib/metrics';
@@ -227,7 +227,7 @@ function tableColumns(group: TableGroup, bench: {chain: Benchmark; region: Map<s
       n/a<span className="sr-only"> ({why})</span>
     </span>
   );
-  const g = `${name} rate`;
+  const g = kpi === 'turnover' ? `${name} rate · ${TURNOVER_TAG}` : `${name} rate`;
   const rate2 = (v: number | null) => fmt.pct(v, 2);
   return [
     nameCol,
@@ -285,7 +285,7 @@ function TrendSection({scope, row, scopeTitle, method, benchNote}: {scope: Scope
         Trends · {scopeTitle} <span className="note">({row.storeIds.length} {row.storeIds.length === 1 ? 'store' : 'stores'})</span>
       </h2>
       <div className="trend-grid">
-        <RateChart title="Turnover Rate over Time" subtitle={`${short}: terminations / average headcount per ${unit}.`} help={`Recalculated from the scope's terminations and headcount for each ${unit}; benchmark lines follow the documented draft (D12, D13). Provisional: per period of the trend, not the confirmed rolling 52-week OPS 200 calculation (D40). ${timeNote}`} data={rate('turnover')} series={series} filters={filtersInfo} fromZero />
+        <RateChart title="Turnover Rate over Time" subtitle={`${TURNOVER_TAG}. ${short}: terminations / average headcount per ${unit}.`} help={`Recalculated from the scope's terminations and headcount for each ${unit}; benchmark lines follow the documented draft (D12, D13). Provisional: per period of the trend, not the confirmed rolling 52-week OPS 200 calculation (D40). ${timeNote}`} data={rate('turnover')} series={series} filters={filtersInfo} fromZero />
         <RateChart title="Retention Rate over Time" subtitle={`${short}: cohort retention per ${unit} (draft, D27).`} help={`(Beginning headcount − terminations of those associates) / beginning headcount for each ${unit}, recalculated from the scope's totals. Not 1 − turnover. ${timeNote}`} data={rate('retention')} series={series} filters={filtersInfo} />
         <CountChart title="Hires over Time" scopeName={short} measure="Hires" help={`Number of hires of ${short} per ${unit} (event count). Benchmarks are averages per store and appear only in the tooltip, next to the scope's own average per store. ${timeNote}`} data={counts('hires')} regionName={regionName} filters={filtersInfo} />
         <CountChart title="Terminations over Time" scopeName={short} measure="Terminations" help={`Number of terminations of ${short} per ${unit} (event count). Benchmarks are averages per store, in the tooltip only. ${timeNote}`} data={counts('terms')} regionName={regionName} filters={filtersInfo} />
@@ -426,7 +426,7 @@ function Ranking({stores, selectedId, onSelect, chain, regionOf, uniqueRegion, s
   return (
     <VisualCard
       title="Store ranking by turnover rate"
-      subtitle={`Showing ${top.length} of ${ranked.length} stores, highest turnover first. A secondary tool for investigation, not a store rating: no thresholds are applied. Selecting a bar selects that store for the trends, like a row in the table.`}
+      subtitle={`${TURNOVER_TAG}. Showing ${top.length} of ${ranked.length} stores, highest turnover first. A secondary tool for investigation, not a store rating: no thresholds are applied. Selecting a bar selects that store for the trends, like a row in the table.`}
       filters={<VisualFilters scope={scope} notes={[benchNote, 'Select a bar to analyze the store in the trends; select it again to return to the filtered scope.']} />}
     >
       <ChartKey items={[{label: 'Store turnover', color: C.comparison}, {label: 'Selected store', color: C.highlight}, {label: 'Chain benchmark', color: S.chain, kind: 'dash'}, ...(regionName ? [{label: `${regionName} benchmark`, color: S.region, kind: 'dash' as const}] : [])]} />

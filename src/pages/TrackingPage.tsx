@@ -2,7 +2,7 @@
 // departments. Each measure keeps its own department attribution: people measures and attendance incidents by the
 // associate's home department; hours, overtime, call-off hours and vacation by the department where the hours were
 // recorded (Ops 100 store × department rows). The home-versus-worked department rule is an assumption (D06).
-import {useMemo} from 'react';
+import {useMemo, useState} from 'react';
 import {Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import {pageById} from '../app/pages';
 import {useReport} from '../app/state';
@@ -10,13 +10,13 @@ import {useScope} from '../app/useScope';
 import {DataTable, type Column} from '../components/DataTable';
 import {KpiCard} from '../components/KpiCard';
 import {ScopeLine, VisualFilters} from '../components/scope';
-import {DecisionChip, EmptyState, IllustrativeChip, InfoTip, PageHeading} from '../components/ui';
+import {DecisionChip, EmptyState, IllustrativeChip, InfoTip, PageHeading, Segmented} from '../components/ui';
 import {VisualCard} from '../components/VisualCard';
 import {DEPARTMENTS, districtById, storeById, storeHasDept, type DeptId} from '../data/org';
 import {INCIDENT_TYPES} from '../data/people';
 import {ATTENDANCE_AVAILABILITY_HELP, ATTENDANCE_AVAILABILITY_NOTE, ATTENDANCE_SOURCE_NOTE, INCIDENT_LABEL} from '../config/attendance';
 import {OT_DEPT_HOURS_HELP, OT_DEPT_PAY_HELP, OT_DEPT_RATE_HELP, OT_HOURS_HELP, OT_PAY_HELP, OT_RATE_HELP} from '../config/references';
-import {TURNOVER_DRAFT_HELP} from '../config/turnover';
+import {TURNOVER_DRAFT_HELP, TURNOVER_TAG} from '../config/turnover';
 import {emptyLabor, rollup, type LaborTotals} from '../lib/aggregate';
 import {ALL} from '../lib/filters';
 import {benchmarkValue, perStoreAverage} from '../lib/benchmark';
@@ -63,12 +63,22 @@ const ftShare = (r: StoreRow) => headcountShare(r.p.ftEnd, r.p.ftEnd, r.p.ptEnd)
 const ot = (r: StoreRow) => (r.op ? otRate(r.op.otPay, r.op.otBasePay) : null);
 const dOt = (r: StoreRow) => otRate(r.l.otPay, r.l.otBasePay);
 const vsProj = (r: StoreRow) => variancePct(r.l.hours, r.l.hoursProj);
+/** Column groups of the store table, so people, both overtime scopes and attendance are not all shown at once. */
+type ColGroup = 'people' | 'opOt' | 'deptOt' | 'attendance' | 'all';
+const COL_GROUPS: {id: ColGroup; label: string; keys: string[]}[] = [
+  {id: 'people', label: 'People', keys: ['turnover', 'terms', 'hires', 'begin', 'end', 'ft']},
+  {id: 'opOt', label: 'Overtime · operational', keys: ['otPay', 'otHrs', 'otRate']},
+  {id: 'deptOt', label: 'Overtime · department', keys: ['dOtPay', 'dOtHrs', 'dOtRate']},
+  {id: 'attendance', label: 'Call-offs, attendance & hours', keys: ['callHrs', 'proj', 'inc', 'avgFt', 'avgPt', 'vac']},
+  {id: 'all', label: 'All columns', keys: []},
+];
 /** Pharmacy is outside the overtime scope: its department row shows "Out of OT scope", not 0. */
 const noOt = (r: StoreRow) => r.dept === 'rx';
 
 export default function TrackingPage() {
   const scope = useScope('tracking');
   const {filters, update} = useReport();
+  const [colGroup, setColGroup] = useState<ColGroup>('people');
   const peopleActive = peopleFilterActive(scope.people);
   const laborBy = (stores: Set<string>, g: 'store' | 'storeDept') =>
     peopleActive ? laborForPeople(stores, scope.dept, scope.from, scope.to, scope.people, g).totals : new Map([...rollup(stores, scope.dept, scope.from, scope.to, g)].map(([k, v]) => [k, v.labor]));
@@ -136,7 +146,7 @@ export default function TrackingPage() {
 
   const columns: Column<StoreRow>[] = [
     {key: 'name', header: 'Store / Department', value: r => r.name, render: r => (r.dept ? r.name : <>{r.name}<span className="cell-sub">{r.district}</span></>), align: 'left'},
-    {key: 'turnover', header: 'Turnover rate', sub: '%', help: HELP.turnover, value: turnover, render: r => fmt.pct(turnover(r)), group: 'People (Workday)'},
+    {key: 'turnover', header: 'Turnover rate', sub: '% · provisional', help: HELP.turnover, value: turnover, render: r => fmt.pct(turnover(r)), group: 'People (Workday)'},
     {key: 'terms', header: 'Terminations', sub: 'count', help: HELP.terms, value: r => r.p.terms, render: r => fmt.int(r.p.terms), group: 'People (Workday)'},
     {key: 'hires', header: 'Hires', sub: 'count', help: HELP.hires, value: r => r.p.hires, render: r => fmt.int(r.p.hires), group: 'People (Workday)'},
     {key: 'begin', header: 'Beginning headcount', help: HELP.begin, value: r => r.p.begin, render: r => fmt.int(r.p.begin), group: 'People (Workday)'},
@@ -195,7 +205,7 @@ export default function TrackingPage() {
       ) : (
         <>
           <section className="kpi-grid six" aria-label="People and attendance summary">
-            <KpiCard level="primary" label="Turnover rate" value={fmt.pct(turnover(tot))} hint={TURNOVER_DRAFT_HELP} decisions={['D12', 'D40']} lines={[chainLine(fmt.pct(bench(turnover)))]} />
+            <KpiCard level="primary" label="Turnover rate" tag={TURNOVER_TAG} value={fmt.pct(turnover(tot))} hint={TURNOVER_DRAFT_HELP} decisions={['D12', 'D40']} lines={[chainLine(fmt.pct(bench(turnover)))]} />
             <KpiCard
               level="primary"
               label="Terminations & hires"
@@ -246,6 +256,7 @@ export default function TrackingPage() {
 
           <VisualCard
             title="Store tracking with chain average"
+            actions={<Segmented label="Store table columns" value={colGroup} options={COL_GROUPS.map(({id, label}) => ({id, label}))} onChange={setColGroup} size="sm" />}
             subtitle={`First row: chain benchmark (${m === 'weighted' ? 'value from chain totals' : 'simple average of store values'}; counts are averages per store), not a total. Select + to see a store's departments; select a store name to filter the report.`}
             filters={
               <VisualFilters
@@ -259,11 +270,11 @@ export default function TrackingPage() {
             }
           >
             <p className="table-scope">
-              <b>Department rows:</b> {DEPT_NOTE} <DecisionChip ids={['D06']} label="Open" align="left" />
+              <b>Columns:</b> {COL_GROUPS.find(g => g.id === colGroup)!.label}. <b>Department rows:</b> {DEPT_NOTE} <DecisionChip ids={['D06']} label="Open" align="left" />
             </p>
             <DataTable
               rows={rows}
-              columns={benchColumns}
+              columns={colGroup === 'all' ? benchColumns : benchColumns.filter(c => c.key === 'name' || COL_GROUPS.find(g => g.id === colGroup)!.keys.includes(c.key))}
               rowKey={r => r.id}
               label="Store tracking"
               searchText={r => (r.dept ? r.name : `${r.name} ${r.district}`)}
@@ -276,7 +287,7 @@ export default function TrackingPage() {
               rowClickable={r => r.dept === null}
               selectedKey={filters.store}
               initialSort={{key: 'turnover', dir: 'desc'}}
-              exportName="turnover-overtime-calloff-by-store"
+              exportName={`turnover-overtime-calloff-by-store-${colGroup}`}
             />
           </VisualCard>
 
