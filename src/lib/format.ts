@@ -5,6 +5,7 @@ const money2 = new Intl.NumberFormat('en-US', {style: 'currency', currency: 'USD
 const int = new Intl.NumberFormat('en-US', {maximumFractionDigits: 0});
 const one = new Intl.NumberFormat('en-US', {minimumFractionDigits: 1, maximumFractionDigits: 1});
 const two = new Intl.NumberFormat('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const upTo2 = new Intl.NumberFormat('en-US', {maximumFractionDigits: 2});
 
 const ok = (v: number | null | undefined): v is number => v !== null && v !== undefined && Number.isFinite(v);
 const sign = (v: number) => (v > 0 ? '+' : v < 0 ? '−' : '');
@@ -38,6 +39,14 @@ export const fmt = {
     if (!ok(v)) return NA;
     const r = Number((v * 100).toFixed(digits));
     return `${sign(r)}${Math.abs(r).toFixed(digits)} pp`;
+  },
+  /** Hours with up to two decimals (schedule hours are kept in quarter hours: 34,198.83, 302.25). */
+  hours2: (v: number | null | undefined) => (ok(v) ? upTo2.format(v) : NA),
+  /** Signed hours with up to two decimals; the sign comes from the rounded value, so −0.001 reads "0". */
+  signedHours2: (v: number | null | undefined) => {
+    if (!ok(v)) return NA;
+    const r = Math.round(v * 100) / 100;
+    return `${sign(r)}${upTo2.format(Math.abs(r))}`;
   },
   dec1: (v: number | null | undefined) => (ok(v) ? one.format(v) : NA),
   dec2: (v: number | null | undefined) => (ok(v) ? two.format(v) : NA),

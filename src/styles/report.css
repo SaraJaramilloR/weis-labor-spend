@@ -193,6 +193,16 @@ table.sticky-first tr.selected td, table.sticky-first tr.selected td:first-child
 .rowlink { border: 0; background: transparent; color: #0f5ea8; padding: 0; text-align: left; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .empty-state { padding: 24px; text-align: center; color: var(--text-muted); font-size: 13px; background: #fff; border: 1px dashed #c8c6c4; }
 
+/* Scheduling Changes (Daily, next / future week) */
+.sched-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 0 0 10px; }
+.sched-summary div { padding: 8px 10px; border: 1px solid #edebe9; border-left: 3px solid var(--dark); background: #fff; }
+.sched-summary dt { font-size: 11px; color: var(--text-muted); }
+.sched-summary dd { margin: 2px 0 0; font-size: 14px; font-weight: 700; color: #252423; }
+.sched-summary dd .cell-sub { display: inline; margin-left: 4px; }
+.sched-wait { margin: 0 0 10px; padding: 10px 12px; border: 1px dashed #c8c6c4; background: #faf9f8; }
+@media (max-width: 1100px) { .sched-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .sched-summary { grid-template-columns: minmax(0, 1fr); } }
+
 /* Pending and evidence */
 .pending-state { padding: 14px 16px; border: 1px dashed var(--amber); background: #fffdf6; color: #484644; font-size: 13px; }
 .pending-state strong { display: block; color: var(--amber-text); margin-bottom: 4px; }

@@ -117,11 +117,12 @@ try {
   const bar = await evalJs(`(() => { const r = document.querySelector('.recharts-bar-rectangle path, .recharts-bar-rectangle'); return !!r; })()`); check('Department bars rendered', bar);
   // Definitions dialog
   await click(`document.querySelector('.header-button')`); await sleep(500); check('Definitions dialog opens', await evalJs(`document.querySelector('.defs-dialog').open`));
-  await click(`[...document.querySelectorAll('.defs-dialog [role=radio]')].find(b => b.textContent === 'Decisions & status')`); await sleep(300); check('Decisions tab lists D01–D40', (await evalJs(`document.querySelectorAll('.defs-dialog tbody tr').length`)) === 40 && (await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith('D40')).textContent`)).includes('Turnover: rolling 52-week OPS 200 calculation'));
+  await click(`[...document.querySelectorAll('.defs-dialog [role=radio]')].find(b => b.textContent === 'Decisions & status')`); await sleep(300); check('Decisions tab lists D01–D41', (await evalJs(`document.querySelectorAll('.defs-dialog tbody tr').length`)) === 41 && (await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith('D40')).textContent`)).includes('Turnover: rolling 52-week OPS 200 calculation'));
   const statuses = await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].map(r => r.dataset.status)`);
   const order = ['Open', 'Partly answered', 'Answered · source pending', 'Source pending', 'Deferred', 'Answered', 'Closed'];
   const st = id => evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith(${JSON.stringify(id)})).dataset.status`);
   check('Decisions: Status column, unresolved first; D33 closed, D40 answered with source pending, D38 partly answered', statuses.every((s, i) => i === 0 || order.indexOf(s) >= order.indexOf(statuses[i - 1])) && statuses[0] === 'Open' && (await st('D33')) === 'Closed' && (await st('D40')) === 'Answered · source pending' && (await st('D38')) === 'Partly answered' && (await evalJs(`[...document.querySelectorAll('.defs-dialog thead th')].map(t => t.textContent).join('|')`)) === 'ID|Status|Decision|How the prototype handles it|Owner', statuses.slice(0, 3).join(','));
+  check('Decisions: D41 Scheduling Changes is Source pending', (await st('D41')) === 'Source pending', await st('D41'));
   check('Decisions: D38 states the report was received and Payroll Update is the email subject; no transcript speaker labels', (await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith('D38')).textContent`)).includes('Payroll Update is the subject of the email') && (await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith('D38')).textContent`)).includes('Still open: (1) whether UC5 should reproduce only the report comparisons') && !(await evalJs(`document.querySelector('.defs-dialog').textContent.includes('Speaker')`)));
   check('Definitions: D33 closed with the Ops 100 DAX; D34 lists the Center Store / Fresh memberships', (await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith('D33')).textContent`)).includes('Closed (Nov 4 and Ops 100 DAX)') && (await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith('D34')).textContent`)).includes('Fresh = Meat, Produce, Deli, Bakery, Seafood, Floral, Starbucks'));
   await click(`[...document.querySelectorAll('.defs-dialog [role=radio]')].find(b => b.textContent === 'Glossary')`); await sleep(300);
@@ -379,14 +380,40 @@ try {
   check('Daily: next-week Labor Rate labeled Provisional (card, group, column) with both email versions in the tooltip', (await dHeads()) === 'Region / District / Store|Chain Forecast|Projected|Var' && (await evalJs(`[...document.querySelectorAll('.daily-report thead .group-row th')].some(t => t.textContent === 'Labor Rate · Provisional')`)) && (await evalJs(`[...document.querySelectorAll('.kpi')].find(k => k.querySelector('.kpi-label').textContent === 'Labor Rate · Projected').querySelector('.kpi-tag').textContent`)) === 'Provisional' && (await evalJs(`[...document.querySelectorAll('.daily-report thead [role=tooltip]')].map(t => t.textContent).find(t => t.startsWith('Provisional. Currently the district email')) ?? ''`)).includes('The regional email uses a different reference'), await dHeads());
   await click(`[...document.querySelectorAll('.daily-report [role=radio]')].find(b => b.textContent === 'Hours & IPLH')`); await sleep(400);
   check('Daily: no day-by-day actuals for a future week', !(await evalJs(`!!document.querySelector('table[aria-label="Current week day by day"]')`)) && (await cardDts('Hours · Store Projected')).startsWith('Hours to hit PRO IPLH|'));
+  // Scheduling Changes (district email): next / future week, original schedule, daily net changes, Total Changes
+  const sc = sel => evalJs(`(() => { const c = document.querySelector('.schedule-changes'); return c ? ${sel} : null; })()`);
+  const scHeads = () => sc(`[...c.querySelectorAll('thead tr:last-child .sort-btn')].map(b => b.textContent.trim()).join('|')`);
+  const scPinned = () => evalJs(`[...document.querySelectorAll('.schedule-changes tr.pinned td')].map(td => td.textContent.trim())`);
+  const scNum = t => Number(t.replace(/[▲▼●\s,]/g, '').replace('−', '-').replace(/hrs.*$/, ''));
+  const scDays = cells => cells.slice(3, 11);
+  check('Daily: Scheduling Changes shown for next week with the district report columns', (await sc(`c.querySelector('.visual-title, h2, h3')?.textContent ?? ''`))?.includes('Scheduling Changes · Next week · Week Ending 10/31/2026') && /^Region \/ District \/ Store\|Completed on-time \(Y\/N\)\|Original schedule\|Sat\|Sun\|Mon\|Tue\|Wed\|Thu\|Fri\|Sat\|Total Changes\|Updated schedule$/.test(await scHeads()), await scHeads());
+  let pin = await scPinned();
+  check('Daily: Scheduling Changes, data through Wednesday: 6 of 8 change days captured, later days not captured (—), not 0', scDays(pin).slice(0, 6).every(t => t !== '—' && !Number.isNaN(scNum(t))) && scDays(pin).slice(6).every(t => t === '—'), scDays(pin).join('|'));
+  check('Daily: Scheduling Changes total = sum of daily changes; Updated = Original + Total', Math.abs(scNum(pin[11]) - scDays(pin).slice(0, 6).reduce((a, t) => a + scNum(t), 0)) < 0.02 && Math.abs(scNum(pin[12]) - scNum(pin[2]) - scNum(pin[11])) < 0.02, pin.join('|'));
+  check('Daily: Scheduling Changes names its source as pending (D41) and is not labeled Budget, MDoc or Chain Forecast', (await sc(`!!c.querySelector('.decision-chip, [class*=decision]') && c.textContent.includes('Source pending')`)) && !(await scHeads()).match(/Budget|MDoc|Chain Forecast/));
   await dSection('Future week'); await sleep(1200);
   check('Daily: future week = Week Ending 11/07/2026', (await dPeriod()).startsWith('Future week · Week Ending 11/07/2026 (FY2026 W45)'), await dPeriod());
+  pin = await scPinned();
+  check('Daily: future week, data through Wednesday: original schedule not captured yet, no values shown as 0', (await sc(`!!c.querySelector('.sched-wait')`)) && pin[2] === '—' && scDays(pin).every(t => t === '—') && pin[1] === 'Not due yet', pin.join('|'));
+  await setSelect('Data through', '6'); await sleep(1200);
+  pin = await scPinned();
+  check('Daily: future week, data through Saturday: original captured and 2 of 8 change days', !(await sc(`!!c.querySelector('.sched-wait')`)) && !Number.isNaN(scNum(pin[2])) && scDays(pin).slice(0, 2).every(t => t !== '—') && scDays(pin).slice(2).every(t => t === '—') && (await sc(`c.querySelector('.sched-summary dt').textContent`)).includes('2 of 8 change days captured'), pin.join('|'));
+  for (let i = 0; i < 3; i++) { await evalJs(`[...document.querySelectorAll('.schedule-changes .tree-btn[aria-expanded=false]')].forEach(b => b.click())`); await sleep(500); }
+  const scMissing = await sc(`({summary: c.querySelectorAll('.sched-summary dd')[3].textContent, rows: [...c.querySelectorAll('tbody tr:not(.pinned)')].filter(tr => tr.textContent.includes('Unavailable')).length, stores: [...c.querySelectorAll('tbody tr:not(.pinned)')].filter(tr => tr.textContent.includes('Unavailable')).map(tr => tr.querySelectorAll('td')[2].textContent).join('|'), pinned: document.querySelector('.schedule-changes tr.pinned').textContent.includes('Unavailable')})`);
+  const nMissing = Number((scMissing?.summary ?? '').match(/^(\d+)/)?.[1] ?? 0);
+  check('Daily: a store missing its original schedule shows Unavailable (not 0) and is left out of the totals', nMissing > 0 && scMissing.rows === nMissing && scMissing.stores.split('|').every(t => t === 'Unavailable') && !scMissing.pinned, JSON.stringify(scMissing));
+  const scNet = await sc(`c.querySelectorAll('.sched-summary dd')[2].textContent.trim()`); const scNetM = /^(\d+) net added · (\d+) net removed · (\d+) no change$/.exec(scNet ?? '');
+  check('Daily: Scheduling Changes summary counts stores by net change (net added / net removed / no change) over the stores with an original schedule', !!scNetM && Number(scNetM[1]) + Number(scNetM[2]) + Number(scNetM[3]) + nMissing === 60, scNet);
+  check('Daily: Scheduling Changes shows zero for captured days with no change', await sc(`[...c.querySelectorAll('tbody tr.child-row:not(.parent-row) td')].some(td => /^●\\s*0$/.test(td.textContent.trim()))`));
+  const scBefore = (await scPinned()).join('|');
   const before = await evalJs(`document.querySelector('.daily-report tr.pinned').textContent`);
   await setSelect('Department', 'meat'); await sleep(1500);
   check('Daily: store-level report; the Department filter does not apply', (await evalJs(`document.querySelector('.daily-report tr.pinned').textContent`)) === before);
+  check('Daily: Scheduling Changes ignores the Department filter (store level)', (await scPinned()).join('|') === scBefore);
   await click(`document.querySelector('.fb-reset')`); await sleep(1200);
   await setSelect('Region', 'R2'); await sleep(1500);
   check('Daily: location filters narrow the report', (await text('.daily-report .table-scope')).includes('Region 2') && (await evalJs(`document.querySelector('.daily-report tr.pinned td').textContent`)).includes('Region 2'));
+  check('Daily: location filters narrow Scheduling Changes', (await sc(`c.querySelector('.table-scope').textContent`)).includes('Region 2') && (await scPinned())[0].includes('Region 2') && (await scPinned()).join('|') !== scBefore);
   await click(`document.querySelector('.fb-reset')`); await sleep(1200);
   // Tracking: full column names, keyboard-accessible header tooltips, separate Terminations and Hires
   await go(base + '?page=tracking');

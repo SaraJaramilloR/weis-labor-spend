@@ -23,6 +23,7 @@ import {fmt, shortDay, usDate} from '../lib/format';
 import {buildOrgTree, onlyChildIds, scopeLabel, type OrgNode} from '../lib/orgTree';
 import {ppDiff, variance} from '../lib/metrics';
 import {ANIMATE, AXIS, C, ChartKey, TipBox} from '../visuals/chartTheme';
+import {SchedulingChanges} from '../visuals/SchedulingChanges';
 
 const META = pageById.get('daily')!;
 const WEEK_OPTIONS = WEEKS.slice(REPORT_FIRST_WEEK, REPORT_LAST_WEEK + 1).reverse();
@@ -232,7 +233,7 @@ export default function DailyPage() {
           <Segmented label="Report section" value={section} options={SECTIONS} onChange={setSection} />
         </div>
         <p className="note">
-          Layout follows the Daily Labor Update (sent by email as the Payroll Update). Week Ending selects the current week; Data through sets the week-to-date cutoff; next and future weeks show projections only. Synthetic data; daily refresh is the intended production behavior, the prototype does not refresh. <DecisionChip ids={['D38']} label="Open" align="left" />
+          Layout follows the Daily Labor Update (sent by email as the Payroll Update). Week Ending selects the current week; Data through sets the week-to-date cutoff and the latest schedule capture; next and future weeks show projections and Scheduling Changes only. Synthetic data; daily refresh is the intended production behavior, the prototype does not refresh. <DecisionChip ids={['D38']} label="Open" align="left" />
         </p>
       </div>
       <p className="scope-line">
@@ -310,7 +311,9 @@ export default function DailyPage() {
                 exportNotes={exportNotes}
               />
             </VisualCard>
-          ) : null}
+          ) : (
+            <SchedulingChanges scope={scope} stores={stores} week={week} cutoff={cutoff} section={section === 'next' ? 'next' : 'future'} />
+          )}
         </>
       )}
     </div>

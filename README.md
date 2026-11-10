@@ -82,7 +82,7 @@ references/       client files, read during development only (never bundled, nev
 - [docs/excel-to-prototype-equivalence.md](docs/excel-to-prototype-equivalence.md): view-by-view Excel-to-prototype equivalence with click-by-click validation.
 - [docs/prototype-validation-map.md](docs/prototype-validation-map.md): item inventory, item inventory, prior-use-case reuse and additions for review.
 - [docs/requirements-map.md](docs/requirements-map.md): original row-by-row extraction.
-- [docs/decision-register.md](docs/decision-register.md): confirmed clarifications and open decisions D01–D28.
+- [docs/decision-register.md](docs/decision-register.md): confirmed clarifications and open decisions D01–D41.
 - [docs/design-reference.md](docs/design-reference.md): what was carried over from BC3 and what was not inspected.
 - [docs/powerbi-handoff.md](docs/powerbi-handoff.md): how each interaction maps to Power BI.
 - [docs/demo-walkthrough.md](docs/demo-walkthrough.md): a short client demo script.

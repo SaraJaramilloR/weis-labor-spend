@@ -21,5 +21,17 @@ export const DAILY_HELP = {
   illustrative: 'Next and future weeks show illustrative synthetic values. The prototype does not calculate or refresh forecasts; in production these values come from the Master Doc (Chain Forecast), the store schedules (Store Projected) and the budget.',
 } as const;
 
+/** Scheduling Changes (district email "Next / Future Week Schedule Changes"). Source mapping still pending (D41). */
+export const SCHEDULE_HELP = {
+  section: 'Changes made to the store schedule after it was first published, as in the Scheduling Changes section of the district Daily Labor Update. The report keeps one copy of the week\'s schedule per day and compares each copy with the previous one. Values are total store scheduled hours (the report\'s Projected Payroll Hours). They are not Budget, MDoc or Chain Forecast hours.',
+  capture: 'Each day\'s copy is captured at 10:30 and includes the changes made since 10:30 the previous day. The report runs the day after the Data through date, so the latest capture shown is that day.',
+  original: 'Original schedule: total store scheduled hours in the first copy, captured on the Friday nine days before the week starts, after stores post their schedules. Unavailable when the store is missing from that copy. Rows above store level add only the stores that have an original schedule.',
+  change: 'Net change in scheduled hours captured that day: this copy minus the previous one. Positive = hours added, negative = hours removed, 0 = schedule captured with no change. The report has only the net store total, so additions and removals that offset each other on the same day are not visible.',
+  total: 'Total Changes = sum of the daily net changes captured so far = Updated schedule − Original schedule.',
+  updated: 'Updated schedule = Original schedule + Total Changes, as of the latest capture. Prototype column: the report shows the original schedule and the changes only. For a store without an original schedule, its latest captured schedule (not added to the totals). Matches Store Projected hours in the table above once every change day has been captured.',
+  posted: 'Completed on-time (Y/N): store answer to the task "Are schedules finalized and posted for the future week?", due the day before the original schedule is captured. Store rows show Yes, No or Did not respond; region and district rows count the Yes answers. Illustrative responses; the report reads them from a separate task export, not from the schedule reports.',
+  pending: 'Source mapping pending (D41): the workbook stores daily copies of the next and future week projection extract, but it does not name the WMBI report (SO1004, SO1005 or SO1006) that supplies them, or which schedule version each copy represents.',
+} as const;
+
 /** Short visible label for the next / future week Labor Rate reference (D38). */
 export const DAILY_RATE_TAG = 'Provisional';
