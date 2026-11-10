@@ -110,7 +110,8 @@ export function SchedulingChanges({scope, stores, week, cutoff, section}: {scope
   ];
   const totalRow: Row = {id: 'total', level: 'region', name: 'Total', sub: '', search: '', dept: null, storeIds: [...stores], data: total, children: []};
   const pct = total.original ? (total.total ?? 0) / total.original : null;
-  const captureLine = `Original schedule captured ${shortDay(st.original)} at 10:30 · change days ${shortDay(st.changes[0])} to ${shortDay(st.changes[CHANGE_DAYS - 1])} · report run ${shortDay(st.run)} (day after Data through)`;
+  // Same state as the waiting note below: "capture expected" until the original schedule has been captured.
+  const captureLine = `Original schedule ${st.originalCaptured ? 'captured' : 'capture expected'} ${shortDay(st.original)} at 10:30 · change days ${shortDay(st.changes[0])} to ${shortDay(st.changes[CHANGE_DAYS - 1])} · report run ${shortDay(st.run)} (day after Data through)`;
   const exportNotes = [`${label} · Week Ending ${usDate(target.end)} · Scheduling Changes`, captureLine, `Location: ${where}`, 'Net change in total store scheduled hours: positive = hours added, negative = hours removed. Rows above store level add only stores with an original schedule.', 'Illustrative synthetic data. Report reference: Daily Labor Update, district email.'];
 
   return (
