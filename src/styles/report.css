@@ -311,3 +311,6 @@ label.check { display: inline-flex; align-items: center; gap: 5px; font-size: 12
 
 /* Next-week scheduling changes · rolling 13 weeks */
 .trend-partial { color: #484644; font-style: italic; }
+.trend-values { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 10px 0 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.trend-values-note { color: var(--text-muted); font-size: 12px; }
+.trend-values .btn-secondary { margin-left: auto; }

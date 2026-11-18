@@ -26,6 +26,8 @@ export type PageMeta = {
   eyebrow: string;
   /** Need stated in the workbook user story (paraphrased), or null for design proposals. */
   question: string | null;
+  /** Source label next to the question; defaults to the workbook user story. */
+  questionSource?: string;
   filters: PageFilters;
 };
 
@@ -35,7 +37,7 @@ export const PAGES: PageMeta[] = [
   {id: 'tracking', name: 'Turnover, Overtime & Call-off Tracking', eyebrow: 'Workbook view · User Story 2', question: 'Turnover, overtime and call-off tracking, chain-wide and by store, with a chain-wide average next to each KPI, to identify poor-performing stores.', filters: {time: true, department: true, people: ['position', 'tenure', 'age', 'recruiter'], idStores: false, exploratoryReference: false}},
   {id: 'benchmark', name: 'Turnover & Retention Benchmark', eyebrow: 'Workbook view · User Story 3', question: 'Where do my stores stand on turnover and retention against the chain and the region, to see where to upskill talent?', filters: {time: true, department: false, people: ['position', 'tenure', 'age', 'recruiter'], idStores: false, exploratoryReference: false, storeSearch: true}},
   {id: 'budget', name: 'Headcount & Hours vs Budget', eyebrow: 'Workbook view · User Story 4', question: 'Headcount, hours and spend versus budget by region, district and store, to give feedback and address areas where labor spend is higher than budget.', filters: {time: true, department: false, people: [], idStores: false, exploratoryReference: true}},
-  {id: 'daily', name: 'Daily Labor vs Budget', eyebrow: 'Workbook view · User Story 5', question: 'A quick daily view of labor hours and spend versus budget for the past week, to make quick staffing decisions.', filters: {time: false, department: false, people: [], idStores: false, exploratoryReference: false}},
+  {id: 'daily', name: 'Daily Labor vs Budget', eyebrow: 'Workbook view · User Story 5', question: 'Daily labor hours and spend versus budget for the current week to date, the next and future weeks, and next-week scheduling changes, to make quick staffing decisions.', questionSource: 'Prototype scope · workbook user story: the past week', filters: {time: false, department: false, people: [], idStores: false, exploratoryReference: false}},
   {id: 'people', name: 'People Reporting (Filterable Ops 200)', eyebrow: 'Workbook view · People Reporting', question: 'Headcount, hires, terminations, turnover and full-time / part-time ratio by recruiter, age range and tenure, by store, district, region and state.', filters: {time: true, department: false, people: ['position', 'tenure', 'age', 'recruiter'], idStores: false, exploratoryReference: false}},
 ];
 

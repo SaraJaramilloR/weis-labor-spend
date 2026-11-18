@@ -3,7 +3,9 @@
 // chart). One line for the selected scope, one point per schedule week (Week Ending), Total Changes in net hours.
 // Placed below Scheduling Changes in the Next week section only. Formulas and time rule: lib/scheduleTrend.ts.
 // Synthetic data; source mapping pending (D41); time rule and partial point are design decisions (D42).
-import {useMemo} from 'react';
+// The weekly table is a prototype addition (not requested): collapsed by default under "Show weekly values", with the
+// CSV export always available. Interaction proposal only; Power BI may present the values differently.
+import {useId, useMemo, useState} from 'react';
 import {CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis} from 'recharts';
 import {useReport} from '../app/state';
 import type {Scope} from '../app/useScope';
@@ -13,6 +15,7 @@ import {DecisionChip, InfoTip, VarianceText} from '../components/ui';
 import {VisualCard} from '../components/VisualCard';
 import {SCHEDULE_HELP, SCHEDULE_TREND_HELP} from '../config/dailyReport';
 import {CHANGE_DAYS} from '../data/scheduleChanges';
+import {downloadCsv, EXPORT_NOTE, toCsv} from '../lib/csv';
 import {fmt, shortDay, usDate} from '../lib/format';
 import {scheduleTrend, trendScopeName, type TrendPoint} from '../lib/scheduleTrend';
 import {ANIMATE, AXIS, C, ChartKey, TipBox} from './chartTheme';
@@ -51,6 +54,8 @@ export function ScheduleChangesTrend({scope, stores, week, cutoff}: {scope: Scop
   const partial = last.status === 'partial';
   const unavailable = points.filter(p => p.status === 'unavailable');
   const first = points[0];
+  const [showValues, setShowValues] = useState(false);
+  const valuesId = useId();
 
   // Final points form the solid line; a partial last point is joined to the previous final point by a dashed segment,
   // so final and partial values are never drawn as one series. Not available weeks are gaps (null), never 0.
@@ -72,7 +77,8 @@ export function ScheduleChangesTrend({scope, stores, week, cutoff}: {scope: Scop
   const lastNote = partial
     ? `Last point (Week Ending ${usDate(last.weekEnding)}, the week in the Scheduling Changes table above) is partial: ${last.capturedDays} of ${CHANGE_DAYS} change days captured through ${usDate(last.asOf!)}, with Data through as selected. The remaining change days are not counted as 0. Move Data through to Friday or later to see it final.`
     : `Last point (Week Ending ${usDate(last.weekEnding)}) is the week in the Scheduling Changes table above, with all ${CHANGE_DAYS} change days captured; it equals that table's Total Changes.`;
-  const notes = [captureNote, lastNote, 'Earlier weeks are read at their own last capture, not at the selected Data through day.', SCHEDULE_TREND_HELP.aggregation, SCHEDULE_HELP.pending, 'Store level: the Department filter does not apply.'];
+  const statusNote = 'Final: all eight schedule-change captures are available; this does not mean the schedule week has ended. Partial: only the available captures are included; the total may change. The status follows the number of captures available, not the weekday.';
+  const notes = [captureNote, lastNote, statusNote, 'Earlier weeks are read at their own last capture, not at the selected Data through day.', SCHEDULE_TREND_HELP.aggregation, SCHEDULE_HELP.pending, 'Store level: the Department filter does not apply.'];
 
   const columns: Column<TrendPoint>[] = [
     {key: 'week', header: 'Week Ending', sub: 'schedule week', value: p => p.w, exportValue: p => usDate(p.weekEnding), render: p => <>{usDate(p.weekEnding)}<span className="cell-sub">{weekTag(p)}{p.current ? ' · table week' : ''}</span></>, align: 'left'},
@@ -84,6 +90,17 @@ export function ScheduleChangesTrend({scope, stores, week, cutoff}: {scope: Scop
     {key: 'file', header: 'Weekly file date', sub: 'last capture', help: SCHEDULE_TREND_HELP.fileDate, value: p => p.fileDate, exportValue: p => usDate(p.fileDate), render: p => shortDay(p.fileDate)},
     {key: 'stores', header: 'Stores added up', help: SCHEDULE_HELP.original, value: p => p.counted, exportValue: p => `${p.counted} of ${p.stores}`, render: p => `${p.counted} of ${p.stores}`},
   ];
+
+  // Same columns and notes as the table, chronological, available whether the table is shown or not.
+  const exportCsv = () =>
+    downloadCsv(
+      `next-week-scheduling-changes-13-weeks-to-${usDate(last.weekEnding).replaceAll('/', '-')}`,
+      toCsv(
+        columns.map(c => (c.sub ? `${c.header} (${c.sub})` : c.header)),
+        points.map(p => columns.map(c => (c.exportValue ?? c.value)(p))),
+        [EXPORT_NOTE, `Next-week scheduling changes · Rolling 13 weeks · ${name}`, ...notes, 'Illustrative synthetic data. Report reference: Next Week Schedule Changes report (CRD tab).'],
+      ),
+    );
 
   return (
     <VisualCard
@@ -125,7 +142,7 @@ export function ScheduleChangesTrend({scope, stores, week, cutoff}: {scope: Scop
                       {label: 'Weekly file date', value: shortDay(p.fileDate)},
                       {label: 'Stores added up', value: `${p.counted} of ${p.stores}`},
                     ]}
-                    note={p.status === 'partial' ? `Captured through ${usDate(p.asOf!)}; later change days are not counted as 0.` : p.missingOriginal ? `${p.missingOriginal} ${p.missingOriginal === 1 ? 'store has' : 'stores have'} no original schedule and ${p.missingOriginal === 1 ? 'is' : 'are'} not added up.` : undefined}
+                    note={p.status === 'partial' ? `Captured through ${usDate(p.asOf!)}; only the available captures are included and the total may change. Later change days are not counted as 0.` : p.missingOriginal ? `${p.missingOriginal} ${p.missingOriginal === 1 ? 'store has' : 'stores have'} no original schedule and ${p.missingOriginal === 1 ? 'is' : 'are'} not added up.` : undefined}
                   />
                 );
               }}
@@ -153,7 +170,18 @@ export function ScheduleChangesTrend({scope, stores, week, cutoff}: {scope: Scop
           Not available: {unavailable.map(p => `Week Ending ${usDate(p.weekEnding)}`).join(', ')}. Shown as a gap, never as 0.
         </p>
       ) : null}
-      <DataTable rows={points} columns={columns} rowKey={p => String(p.w)} label={`Next-week scheduling changes by schedule week, ${name}`} countNoun="weeks" initialSort={{key: 'week', dir: 'asc'}} exportName={`next-week-scheduling-changes-13-weeks-to-${usDate(last.weekEnding).replaceAll('/', '-')}`} exportNotes={[`Next-week scheduling changes · Rolling 13 weeks · ${name}`, ...notes, 'Illustrative synthetic data. Report reference: Next Week Schedule Changes report (CRD tab).']} />
+      <div className="trend-values">
+        <button type="button" className="btn-link" aria-expanded={showValues} aria-controls={valuesId} onClick={() => setShowValues(v => !v)}>
+          {showValues ? 'Hide weekly values' : 'Show weekly values'}
+        </button>
+        <span className="trend-values-note">{SCHEDULE_TREND_HELP.values}</span>
+        <button type="button" className="btn-secondary" onClick={exportCsv}>
+          Export CSV
+        </button>
+      </div>
+      <div id={valuesId} hidden={!showValues}>
+        <DataTable rows={points} columns={columns} rowKey={p => String(p.w)} label={`Next-week scheduling changes by schedule week, ${name}`} countNoun="weeks" initialSort={{key: 'week', dir: 'asc'}} />
+      </div>
     </VisualCard>
   );
 }

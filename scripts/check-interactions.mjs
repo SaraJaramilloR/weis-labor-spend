@@ -403,6 +403,20 @@ try {
   check('Daily: trend last point = Scheduling Changes Total Changes (same scope and cutoff)', Math.abs(scNum(trr[12][2]) - scNum(pin[11])) < 0.01, `${trr[12][2]} vs ${pin[11]}`);
   const trHistWed = trr.slice(0, 12).map(r => r[2]).join('|');
   check('Daily: trend draws one solid line and a hollow partial marker', (await tr(`c.querySelectorAll('.recharts-line').length`)) === 2 && (await tr(`c.querySelectorAll('.recharts-line circle[fill="#fff"]').length`)) === 1);
+  const dq = (await evalJs(`document.querySelector('.page-question')?.textContent ?? ''`)) ?? '';
+  check('Daily: page description covers current week, next and future weeks and scheduling changes; source labeled as prototype scope', dq.includes('current week to date, the next and future weeks, and next-week scheduling changes') && dq.includes('Prototype scope') && !dq.includes('for the past week,'), dq);
+  // Weekly values: prototype addition, collapsed by default under the chart; CSV export available while collapsed
+  const tv = () => tr(`(() => { const b = c.querySelector('.trend-values .btn-link'); const box = document.getElementById(b.getAttribute('aria-controls')); return [b.textContent, b.getAttribute('aria-expanded'), box.hidden, box.getBoundingClientRect().height > 0, c.querySelector('.trend-values-note').textContent].join('|'); })()`);
+  check('Daily: trend weekly values collapsed by default, chart first', (await tv()) === 'Show weekly values|false|true|false|Weekly values behind the trend.' && (await tr(`!!(c.querySelector('.chart-h280').compareDocumentPosition(c.querySelector('.trend-values')) & Node.DOCUMENT_POSITION_FOLLOWING)`)), await tv());
+  await evalJs(`(() => { window.__csv = null; const orig = URL.createObjectURL; URL.createObjectURL = b => { window.__csv = b; return orig.call(URL, b); }; })()`);
+  await click(`document.querySelector('.schedule-trend .trend-values .btn-secondary')`); await sleep(600);
+  const trCsv = await evalJs(`window.__csv ? window.__csv.text() : ''`);
+  const trCsvWeeks = trCsv.split('\n').map(l => l.split(',')[0].replace(/"/g, '')).filter(d => /^\d\d\/\d\d\/\d{4}$/.test(d));
+  check('Daily: trend CSV exports the 13 weeks while the table is collapsed, with status notes', trCsvWeeks.length === 13 && trCsvWeeks[0] === '08/08/2026' && trCsvWeeks[12] === '10/31/2026' && trCsv.includes('Week Ending (schedule week),Status,"Total Changes (hrs, net)"') && trCsv.includes('this does not mean the schedule week has ended') && trCsv.includes('the total may change') && trCsv.includes('Partial · 6 of 8 change days'), `${trCsvWeeks.length} weeks`);
+  await click(`document.querySelector('.schedule-trend .trend-values .btn-link')`); await sleep(400);
+  check('Daily: Show weekly values opens the table; button reads Hide weekly values', (await tv()).startsWith('Hide weekly values|true|false|true'), await tv());
+  await click(`document.querySelector('.schedule-trend .trend-values .btn-link')`); await sleep(400);
+  check('Daily: Hide weekly values collapses the table again', (await tv()).startsWith('Show weekly values|false|true|false'), await tv());
   for (const [day, k, n, status] of [['Thursday', '4', 7, 'Partial'], ['Friday', '5', 8, 'Final']]) {
     await setSelect('Data through', k); await sleep(1200);
     const rows = await trRows(); const p = await scPinned();

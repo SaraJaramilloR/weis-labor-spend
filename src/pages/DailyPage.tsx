@@ -202,7 +202,7 @@ export default function DailyPage() {
 
   return (
     <div className="page">
-      <PageHeading eyebrow={META.eyebrow} title={META.name} question={META.question} />
+      <PageHeading eyebrow={META.eyebrow} title={META.name} question={META.question} questionSource={META.questionSource} />
       <div className="local-controls" role="group" aria-label="Report week and data cutoff">
         <div className="fb-field">
           <label htmlFor={weekId}>Week Ending</label>

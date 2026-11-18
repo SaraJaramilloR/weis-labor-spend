@@ -77,7 +77,7 @@ export function IllustrativeChip({text = 'Illustrative'}: {text?: string}) {
 
 /** Page heading (UC1 / UC2 pattern: eyebrow, title, business question). The question restates the workbook
  *  user story; design-proposal pages pass none. */
-export function PageHeading({eyebrow, title, question, children, subtle = false}: {eyebrow: string; title: string; question?: string | null; children?: ReactNode; subtle?: boolean}) {
+export function PageHeading({eyebrow, title, question, questionSource = 'From the workbook user story', children, subtle = false}: {eyebrow: string; title: string; question?: string | null; questionSource?: string; children?: ReactNode; subtle?: boolean}) {
   return (
     <>
       <div className="page-heading">
@@ -90,7 +90,7 @@ export function PageHeading({eyebrow, title, question, children, subtle = false}
       {question ? (
         <p className="page-question">
           {question}
-          <span className="q-src">From the workbook user story</span>
+          <span className="q-src">{questionSource}</span>
         </p>
       ) : null}
     </>
