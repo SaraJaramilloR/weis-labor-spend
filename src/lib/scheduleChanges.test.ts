@@ -33,6 +33,19 @@ describe('Capture calendar (as in the reference run)', () => {
   it('next week: every change day is captured with data through Saturday', () => {
     expect(captureState(W, SAT, 'next').captured.every(Boolean)).toBe(true);
   });
+  it('next week, Thursday / Friday / Saturday: run date = Data through + 1; captures through the run date (7, 8, 8); Saturday adds no change day', () => {
+    const {start} = reportWeekDates(W);
+    const rows = [4, 5, 6].map(k => {
+      const st = captureState(W, k, 'next');
+      const n = st.captured.filter(Boolean).length;
+      return {run: st.run, n, last: st.changes[n - 1]};
+    });
+    expect(rows).toEqual([
+      {run: addDays(start, 5), n: 7, last: addDays(start, 5)},
+      {run: addDays(start, 6), n: 8, last: addDays(start, 6)},
+      {run: addDays(start, 7), n: 8, last: addDays(start, 6)},
+    ]);
+  });
   it('future week: original schedule captured only with data through Thursday or later; then 0, 1, 2 change days', () => {
     for (const k of [0, 1, 2, 3]) expect(captureState(W, k, 'future').originalCaptured).toBe(false);
     expect([4, 5, 6].map(k => captureState(W, k, 'future').captured.filter(Boolean).length)).toEqual([0, 1, 2]);

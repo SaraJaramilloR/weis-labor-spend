@@ -308,3 +308,6 @@ label.check { display: inline-flex; align-items: center; gap: 5px; font-size: 12
 .status-closed, .status-deferred { border-color: #c8c6c4; color: #605e5c; }
 
 .fb-help { display: block; max-width: 300px; margin-top: 4px; font-size: 11px; line-height: 1.35; color: var(--text-muted); }
+
+/* Next-week scheduling changes · rolling 13 weeks */
+.trend-partial { color: #484644; font-style: italic; }

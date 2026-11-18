@@ -117,7 +117,7 @@ try {
   const bar = await evalJs(`(() => { const r = document.querySelector('.recharts-bar-rectangle path, .recharts-bar-rectangle'); return !!r; })()`); check('Department bars rendered', bar);
   // Definitions dialog
   await click(`document.querySelector('.header-button')`); await sleep(500); check('Definitions dialog opens', await evalJs(`document.querySelector('.defs-dialog').open`));
-  await click(`[...document.querySelectorAll('.defs-dialog [role=radio]')].find(b => b.textContent === 'Decisions & status')`); await sleep(300); check('Decisions tab lists D01–D41', (await evalJs(`document.querySelectorAll('.defs-dialog tbody tr').length`)) === 41 && (await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith('D40')).textContent`)).includes('Turnover: rolling 52-week OPS 200 calculation'));
+  await click(`[...document.querySelectorAll('.defs-dialog [role=radio]')].find(b => b.textContent === 'Decisions & status')`); await sleep(300); check('Decisions tab lists D01–D42', (await evalJs(`document.querySelectorAll('.defs-dialog tbody tr').length`)) === 42 && (await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith('D40')).textContent`)).includes('Turnover: rolling 52-week OPS 200 calculation') && (await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith('D42'))?.textContent ?? ''`)).includes('Next-week scheduling changes trend'));
   const statuses = await evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].map(r => r.dataset.status)`);
   const order = ['Open', 'Partly answered', 'Answered · source pending', 'Source pending', 'Deferred', 'Answered', 'Closed'];
   const st = id => evalJs(`[...document.querySelectorAll('.defs-dialog tbody tr')].find(r => r.textContent.startsWith(${JSON.stringify(id)})).dataset.status`);
@@ -392,8 +392,31 @@ try {
   check('Daily: Scheduling Changes total = sum of daily changes; Updated = Original + Total', Math.abs(scNum(pin[11]) - scDays(pin).slice(0, 6).reduce((a, t) => a + scNum(t), 0)) < 0.02 && Math.abs(scNum(pin[12]) - scNum(pin[2]) - scNum(pin[11])) < 0.02, pin.join('|'));
   check('Daily: Scheduling Changes names its source as pending (D41) and is not labeled Budget, MDoc or Chain Forecast', (await sc(`!!c.querySelector('.decision-chip, [class*=decision]') && c.textContent.includes('Source pending')`)) && !(await scHeads()).match(/Budget|MDoc|Chain Forecast/));
   const scTopNext = (await sc(`c.querySelector('.table-scope').textContent`)) ?? ''; check('Daily: next week capture line says the original schedule was captured (Fri, 10:30)', /Original schedule captured Fri \d\d\/\d\d\/\d{4} at 10:30/.test(scTopNext) && !scTopNext.includes('capture expected'), scTopNext.slice(0, 120));
+  // Next-week scheduling changes · rolling 13 weeks (CRD tab of the Next Week Schedule Changes report)
+  const tr = sel => evalJs(`(() => { const c = document.querySelector('.schedule-trend'); return c ? ${sel} : null; })()`);
+  const trRows = () => tr(`[...c.querySelectorAll('table[aria-label^="Next-week scheduling changes"] tbody tr')].map(r => [...r.children].map(td => td.textContent.trim()))`);
+  let trr = await trRows();
+  check('Daily: 13-week trend below Scheduling Changes, next week only, titled as proposed', (await tr(`c.querySelector('h2, h3, .visual-title')?.textContent ?? ''`))?.includes('Next-week scheduling changes · Rolling 13 weeks') && (await evalJs(`(() => { const a = document.querySelector('.schedule-changes'), b = document.querySelector('.schedule-trend'); return !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING); })()`)));
+  check('Daily: trend has 13 consecutive schedule weeks, oldest first, ending at the table week (Week Ending 08/08/2026 → 10/31/2026)', trr?.length === 13 && trr[0][0].startsWith('08/08/2026') && trr[12][0].startsWith('10/31/2026') && trr[12][0].includes('table week'), trr?.map(r => r[0].slice(0, 10)).join('|'));
+  check('Daily: trend line named Chain with no location filter', (await tr(`c.textContent`))?.includes('Chain · 60 stores'));
+  check('Daily: trend, data through Wednesday: last week partial (6 of 8 change days), earlier weeks final', trr[12][1].startsWith('Partial · 6 of 8 change days') && trr.slice(0, 12).every(r => r[1] === 'Final') && (await tr(`!!c.querySelector('.chart-key') && c.querySelector('.chart-key').textContent.includes('Partial week')`)), trr[12][1]);
+  check('Daily: trend last point = Scheduling Changes Total Changes (same scope and cutoff)', Math.abs(scNum(trr[12][2]) - scNum(pin[11])) < 0.01, `${trr[12][2]} vs ${pin[11]}`);
+  const trHistWed = trr.slice(0, 12).map(r => r[2]).join('|');
+  check('Daily: trend draws one solid line and a hollow partial marker', (await tr(`c.querySelectorAll('.recharts-line').length`)) === 2 && (await tr(`c.querySelectorAll('.recharts-line circle[fill="#fff"]').length`)) === 1);
+  for (const [day, k, n, status] of [['Thursday', '4', 7, 'Partial'], ['Friday', '5', 8, 'Final']]) {
+    await setSelect('Data through', k); await sleep(1200);
+    const rows = await trRows(); const p = await scPinned();
+    const summary = (await sc(`c.querySelector('.sched-summary dt').textContent`)) ?? '';
+    const key = (await tr(`c.querySelector('.chart-key').textContent`)) ?? '';
+    check(`Daily: trend, data through ${day}: table ${n} of 8 change days; last point ${status}, same value as the table Total; labels agree`, summary.includes(`${n} of 8 change days captured`) && rows[12][1].startsWith(status === 'Final' ? 'Final' : `Partial · ${n} of 8 change days`) && Math.abs(scNum(rows[12][2]) - scNum(p[11])) < 0.01 && (status === 'Final' ? !key.includes('Partial') && (await tr(`c.querySelectorAll('.recharts-line').length`)) === 1 : key.includes(`${n} of 8`)), `${summary} · ${rows[12][1]} · ${rows[12][2]} vs ${p[11]}`);
+  }
+  await setSelect('Data through', '6'); await sleep(1200);
+  trr = await trRows(); const pinSat = await scPinned();
+  check('Daily: trend, data through Saturday: all 13 weeks final; last = table Total; earlier weeks unchanged by Data through', trr.every(r => r[1] === 'Final') && Math.abs(scNum(trr[12][2]) - scNum(pinSat[11])) < 0.01 && trr.slice(0, 12).map(r => r[2]).join('|') === trHistWed && (await tr(`c.querySelectorAll('.recharts-line').length`)) === 1, `${trr[12][2]} vs ${pinSat[11]}`);
+  await setSelect('Data through', '3'); await sleep(1200);
   await dSection('Future week'); await sleep(1200);
   check('Daily: future week = Week Ending 11/07/2026', (await dPeriod()).startsWith('Future week · Week Ending 11/07/2026 (FY2026 W45)'), await dPeriod());
+  check('Daily: no 13-week trend in the future week section', !(await evalJs(`!!document.querySelector('.schedule-trend')`)));
   pin = await scPinned();
   check('Daily: future week, data through Wednesday: original schedule not captured yet, no values shown as 0', (await sc(`!!c.querySelector('.sched-wait')`)) && pin[2] === '—' && scDays(pin).every(t => t === '—') && pin[1] === 'Not due yet', pin.join('|'));
   const scTopWed = (await sc(`c.querySelector('.table-scope').textContent`)) ?? ''; const scWait = (await sc(`c.querySelector('.sched-wait').textContent`)) ?? ''; const scDue = /Original schedule capture expected (Fri (\d\d\/\d\d\/\d{4})) at 10:30/.exec(scTopWed);
@@ -418,6 +441,14 @@ try {
   await setSelect('Region', 'R2'); await sleep(1500);
   check('Daily: location filters narrow the report', (await text('.daily-report .table-scope')).includes('Region 2') && (await evalJs(`document.querySelector('.daily-report tr.pinned td').textContent`)).includes('Region 2'));
   check('Daily: location filters narrow Scheduling Changes', (await sc(`c.querySelector('.table-scope').textContent`)).includes('Region 2') && (await scPinned())[0].includes('Region 2') && (await scPinned()).join('|') !== scBefore);
+  await dSection('Next week'); await sleep(1200);
+  const trR2 = await trRows();
+  check('Daily: location filter narrows the trend and names the scope', (await tr(`c.querySelector('.visual-subtitle').textContent`)).includes('Region 2') && !(await tr(`c.textContent`)).includes('Chain · 60 stores') && trR2.slice(0, 12).map(r => r[2]).join('|') !== trHistWed);
+  await click(`document.querySelector('.fb-reset')`); await sleep(1200);
+  await openDiscovery(); await evalJs(`(() => { const s = document.querySelector('.discovery-dialog select'); const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; set.call(s, 'district'); s.dispatchEvent(new Event('change', {bubbles: true})); })()`); await sleep(1500); await closeDiscovery();
+  const trRole = await tr(`c.textContent`); const trRoleRows = await trRows();
+  check('Daily: simulated district access limits the trend to that district (not Chain)', !!trRole && !trRole.includes('Chain ·') && /District/.test(trRole) && trRoleRows.length === 13 && trRoleRows.map(r => r[2]).join('|') !== trR2.map(r => r[2]).join('|'), (trRole ?? '').slice(0, 160));
+  await openDiscovery(); await evalJs(`(() => { const s = document.querySelector('.discovery-dialog select'); const set = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set; set.call(s, 'regional'); s.dispatchEvent(new Event('change', {bubbles: true})); })()`); await sleep(1500); await closeDiscovery();
   await click(`document.querySelector('.fb-reset')`); await sleep(1200);
   // Tracking: full column names, keyboard-accessible header tooltips, separate Terminations and Hires
   await go(base + '?page=tracking');

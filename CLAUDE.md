@@ -16,6 +16,7 @@ The central question: **"Where is labor spend and labor hours above or below the
 | `references/UC5 Labor Spend_ Technical Requirements Meeting_10.27.26.docx` | Meeting transcript, Oct 27, 2026 |
 | `references/technical-session-recap.md` | Confirmed clarifications and open items |
 | `references/ops/Reports/Report_OPS101`–`OPS111*.xlsx`, `Report_OPS300_TL.xlsx` | Legacy calculations and layouts (OPS300 Total Loss is out of UC5 scope) |
+| `references/ops/Reports/Report_Next Week Schedule Changes-Detail for 08-16-25.xlsx` | Weekly next-week schedule changes report; `CRD` tab = 13-week history used for the rolling trend (traced in `docs/scheduling-changes-source-trace.md` § 5) |
 | `references/ops/Reports/VBA_Runner.xlsm` | `Dates` sheet = OPS reporting calendar. **Never run macros.** |
 | `references/design/BC3/` | Local BC3 code, visual reference only |
 

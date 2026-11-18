@@ -14,8 +14,13 @@
 // Friday S − 9; daily changes captured S − 8 … S − 1 (8 days, Saturday to Saturday). The final capture equals the
 // Store Projected hours of that week in WEEK_TARGETS, so Scheduling Changes agrees with the report table once every
 // change day has been captured. Synthetic and illustrative only.
+//
+// History for the rolling 13-week trend (Report_Next Week Schedule Changes-Detail › CRD): target weeks reach back
+// 12 weeks before the next week of the earliest report week. Weeks without report targets take the store's projected
+// hours from the weekly facts (the same `hoursProj` the report targets add up), so every week follows one rule.
 import {addDays} from './calendar';
 import {REPORT_FIRST_WEEK, PROJECTION_LAST_WEEK, WEEK_TARGETS, reportWeekDates} from './dailyReport';
+import {laborByWeek} from './generate';
 import {STORES} from './org';
 import {hashSeed, mulberry32, noise} from '../lib/prng';
 
@@ -23,6 +28,10 @@ import {hashSeed, mulberry32, noise} from '../lib/prng';
 export const CHANGE_DAYS = 8;
 /** Days between the original-schedule capture and the Sunday the week starts. */
 export const BASELINE_LEAD_DAYS = 9;
+/** Points of the rolling trend (CRD "Only 13 Weeks"). */
+export const TREND_WEEKS = 13;
+/** First target week with schedule captures: 12 weeks before the next week of the earliest report week. */
+export const SCHEDULE_FIRST_WEEK = REPORT_FIRST_WEEK + 1 - (TREND_WEEKS - 1);
 
 /** Response to the store task "Are schedules finalized and posted for the future week?" (report: Completed on-time). */
 export type PostedStatus = 'yes' | 'no' | 'none';
@@ -54,12 +63,21 @@ export function reportRunDate(reportWeek: number, cutoff: number): string {
 
 const quarter = (v: number) => Math.round(v * 4) / 4;
 
+/** Store projected hours of a week without report targets: SUM of the store's weekly `hoursProj` facts. */
+function factProjHours(w: number): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const f of laborByWeek[w] ?? []) m.set(f.store, (m.get(f.store) ?? 0) + f.hoursProj);
+  return m;
+}
+
 function build(): Map<string, StoreScheduleWeek> {
   const out = new Map<string, StoreScheduleWeek>();
-  for (let w = REPORT_FIRST_WEEK + 1; w <= PROJECTION_LAST_WEEK; w++) {
+  for (let w = Math.max(0, SCHEDULE_FIRST_WEEK); w <= PROJECTION_LAST_WEEK; w++) {
+    // Report targets start at REPORT_FIRST_WEEK; earlier weeks read the same projected hours from the facts.
+    const fromFacts = w < REPORT_FIRST_WEEK ? factProjHours(w) : null;
     for (const s of STORES) {
-      const t = WEEK_TARGETS.get(`${s.id}|${w}`);
-      if (!t) continue;
+      const projHours = fromFacts ? fromFacts.get(s.id) : WEEK_TARGETS.get(`${s.id}|${w}`)?.projHours;
+      if (projHours === undefined) continue;
       const rnd = mulberry32(hashSeed(`sched-${s.id}-${w}`));
       // A few stores per week are missing from the original-schedule capture (unavailable, never 0).
       const missing = rnd() < 0.035;
@@ -69,11 +87,11 @@ function build(): Map<string, StoreScheduleWeek> {
       for (let i = 0; i < CHANGE_DAYS; i++) {
         // Changes get more frequent as the week approaches; about half of the store-days have none.
         const changed = rnd() < 0.36 + 0.03 * i;
-        const size = Math.abs(noise(rnd, t.projHours * 0.008)) + 1;
+        const size = Math.abs(noise(rnd, projHours * 0.008)) + 1;
         const up = rnd() < 0.62;
         changes.push(changed ? quarter(up ? size : -size) : 0);
       }
-      const final = t.projHours;
+      const final = projHours;
       const original = missing ? null : final - changes.reduce((a, b) => a + b, 0);
       out.set(`${s.id}|${w}`, {store: s.id, w, original, changes, final, posted});
     }

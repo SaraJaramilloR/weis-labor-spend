@@ -33,5 +33,14 @@ export const SCHEDULE_HELP = {
   pending: 'Source mapping pending (D41): the workbook stores daily copies of the next and future week projection extract, but it does not name the WMBI report (SO1004, SO1005 or SO1006) that supplies them, or which schedule version each copy represents.',
 } as const;
 
+/** Next-week scheduling changes · rolling 13 weeks (Next Week Schedule Changes report, CRD tab). */
+export const SCHEDULE_TREND_HELP = {
+  about: 'Requested by the business: a rolling 13-week trend line of the total schedule changes for the next week. Each point is the Total Changes of one schedule week, as in Scheduling Changes above: the sum of the 8 daily net changes captured after the original schedule (positive = hours added, negative = hours removed). The reference report keeps the same 13-week history by chain, region, district and store. The window ends at the week shown in the table above.',
+  status: 'Final: all 8 daily change captures the report adds up are available, through the Saturday before the week starts. The report runs the day after Data through and includes that morning\'s capture, so the next week is final with Data through Friday (run Saturday) or Saturday; Saturday adds no change day. Partial: only the latest week, with Data through Sunday to Thursday (3 to 7 of 8 captures); the captures not taken yet are not counted. Not available: no store in scope has an original schedule that week; shown as a gap, never as 0.',
+  fileDate: 'Date of the weekly report file: the Saturday before the schedule week starts, when the last change day is captured. The point is plotted on the schedule week (Week Ending), not on this date.',
+  pct: 'Total Changes / Original schedule of the same stores. Prototype addition, as in the Scheduling Changes summary; the reference report shows hours only.',
+  aggregation: 'One line for the selected scope: chain with no location filter, otherwise the selected region, district or store; State and Geography narrow the same stores as the table. Region, district and chain values add up their stores, as in the reference report. Prototype rule, as in the table: a store without an original schedule that week is not added up (the reference report has no such case in the sample, and its workbook formula would count the whole schedule as a change).',
+} as const;
+
 /** Short visible label for the next / future week Labor Rate reference (D38). */
 export const DAILY_RATE_TAG = 'Provisional';

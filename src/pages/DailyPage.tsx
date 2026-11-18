@@ -23,6 +23,7 @@ import {fmt, shortDay, usDate} from '../lib/format';
 import {buildOrgTree, onlyChildIds, scopeLabel, type OrgNode} from '../lib/orgTree';
 import {ppDiff, variance} from '../lib/metrics';
 import {ANIMATE, AXIS, C, ChartKey, TipBox} from '../visuals/chartTheme';
+import {ScheduleChangesTrend} from '../visuals/ScheduleChangesTrend';
 import {SchedulingChanges} from '../visuals/SchedulingChanges';
 
 const META = pageById.get('daily')!;
@@ -312,7 +313,10 @@ export default function DailyPage() {
               />
             </VisualCard>
           ) : (
-            <SchedulingChanges scope={scope} stores={stores} week={week} cutoff={cutoff} section={section === 'next' ? 'next' : 'future'} />
+            <>
+              <SchedulingChanges scope={scope} stores={stores} week={week} cutoff={cutoff} section={section === 'next' ? 'next' : 'future'} />
+              {section === 'next' ? <ScheduleChangesTrend scope={scope} stores={stores} week={week} cutoff={cutoff} /> : null}
+            </>
           )}
         </>
       )}
